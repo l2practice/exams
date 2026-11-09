@@ -12,8 +12,8 @@ Google Sheet (admin)                      Firestore                         Web 
 
 | Cột E | Vai trò | Thấy gì trên web |
 |---|---|---|
-| (trống) | Tổ viên | **Tổng quan** · **Đăng ký** |
-| `tt1` | Tổ trưởng tổ Chuyên 1 (SPA) | Nhóm **Quản lý** (Thống kê · Thêm ca) + nhóm **Cá nhân** (Tổng quan · Đăng ký, như tổ viên) |
+| (trống) | Tổ viên | Tổng quan · Đăng ký ca thi · Ca của tôi · Lịch sử gác thi |
+| `tt1` | Tổ trưởng tổ Chuyên 1 (SPA) | Như tổ viên, thêm nhóm **Quản lý** (Thống kê giảng viên · Thêm ca thi mới · Danh sách ca thi) |
 | `tt2` | Tổ trưởng tổ Chuyên 2 (NNA) | như trên, chỉ với tổ 2 |
 | `tt3` | Tổ trưởng tổ Cơ bản | như trên, chỉ với tổ 3 |
 | `x` | Quản trị toàn khoa (tuỳ chọn) | như tổ trưởng nhưng cả 3 tổ |
@@ -22,7 +22,11 @@ Tổ trưởng chỉ thấy giảng viên của tổ mình và chỉ sửa đư�
 Cột C (Tổ) là tổ mà GV thuộc về, dùng để đăng ký ca; tổ trưởng cũng đăng ký gác thi như mọi người.
 
 ### Giao diện
-Theo hệ thiết kế **ArticuWrite** (repo `l2practice/artwrite`): nền tím nhạt, thanh biểu tượng bên trái (biểu tượng trên chữ, mục đang chọn tô màu periwinkle), thanh tiêu đề có thẻ người dùng, thẻ trắng bóng nhẹ, nút dạng viên thuốc, font Be Vietnam Pro. Trên điện thoại, thanh bên thành **thanh tab cố định ở đáy màn hình** (luôn thấy, không phải mở menu); nút Đăng xuất chuyển vào trang Cài đặt để tránh bấm nhầm. Biểu tượng nằm trong `docs/icons.js`, logo và favicon là `docs/icon.svg`. Chữ cỡ lớn hơn ArticuWrite một chút vì nhiều giảng viên lớn tuổi.
+Theo bản thiết kế của khoa: **thanh bên xanh đêm** (logo DNU, menu), thanh tiêu đề có thẻ người dùng, thẻ số liệu, vòng tiến độ, bảng danh sách. Menu:
+- **Giảng viên:** Tổng quan · Đăng ký ca thi · Ca của tôi · Lịch sử gác thi · Cài đặt.
+- **Tổ trưởng** thêm nhóm **Quản lý**: Thống kê giảng viên · Thêm ca thi mới (tab *Nhập tay* / *Quét AI*) · Danh sách ca thi.
+Trên điện thoại thanh bên thành **thanh tab cố định ở đáy** (tổ trưởng có thêm một mục "Quản lý" và thanh chọn Thống kê | Thêm ca | Danh sách ở đầu trang); nút Đăng xuất nằm ở menu tên người dùng và trong Cài đặt. Chữ cỡ lớn cho người lớn tuổi.
+**Logo và ảnh nền (tuỳ chọn):** bỏ file `docs/logo.png` (logo DNU, nền trong hoặc trắng) và `docs/hero.jpg` (ảnh toà nhà trường) vào thư mục `docs/`; web tự dùng, không có thì hiện chữ "DNU" và nền xanh.
 
 ## 2. Đợt thi: 3 trạng thái (tab `Dot`, cột D)
 
@@ -60,7 +64,7 @@ Repo *Settings → Pages → Deploy from a branch → `main` → `/docs` → Sav
 **Gác thi → 1. Đồng bộ lên Firebase.** Hộp thoại phải báo số đợt, số giảng viên và "Tài khoản đăng nhập: tạo mới N". Tài khoản mới có mật khẩu mặc định (`matKhauMacDinh`, hiện là `chuyen1`) và web sẽ nhắc GV đổi. Chạy lại bất cứ lúc nào (thêm GV, đổi vai trò, đổi hạn chót, đổi trạng thái đợt); ca thi và đăng ký không bị đụng tới.
 
 ### Bước 6 – Chạy thử trọn vòng
-1. Mở web bằng cửa sổ ẩn danh, đăng nhập bằng email tổ trưởng.
+1. Mở web bằng cửa sổ ẩn danh, đăng nhập bằng email tổ trưởng (lần đầu dùng mật khẩu do Khoa cấp, web mở sẵn trang Cài đặt để đổi).
 2. **Quản lý → Thêm ca thi mới**: chọn đợt `SOAN`, nhập ngày, tick ca/khoá/ngành, số GV cần của tổ → *Xem trước* → *Thêm vào đợt*.
 3. Ở Sheet đổi trạng thái đợt thành `MO` → **Đồng bộ lại**.
 4. Đăng nhập bằng một tổ viên → thẻ **Đăng ký ca thi** → bấm **+**. Thử thêm: huỷ ca, đổi mật khẩu, Quên mật khẩu.
@@ -76,11 +80,15 @@ Repo *Settings → Pages → Deploy from a branch → `main` → `/docs` → Sav
 - Chỉ tổ trưởng/quản trị gọi được (script kiểm tra phiên đăng nhập và vai trò), tối đa 40 lần quét/người/ngày. Ảnh được thu nhỏ trên máy trước khi gửi.
 - Giờ thi AI đọc được đổi thành số ca theo bảng giờ trong `CauHinh` (lệch tối đa 45 phút).
 
-## 3c. Giao diện đăng ký của giảng viên
-Trang **Đăng ký** có hai kiểu xem (nhớ lựa chọn của từng người):
-- **Dạng danh sách** (mặc định): mỗi ca một dòng, gộp ca của **mọi đợt** theo ngày. Bấm một dòng thì khung **Xem trước cả ngày** ở trên hiện bảng ca × khoá-ngành của ngày đó (gộp các đợt), chi tiết ca, ai đã đăng ký và "Ca của bạn trong ngày này". Ca cùng giờ với ca đã đăng ký báo "Bạn đã có ca khác cùng giờ".
-- **Dạng bảng**: mỗi đợt một bảng giống file mẫu.
-Đăng ký/huỷ luôn có hộp thoại xác nhận chữ lớn.
+## 3c. Trang Đăng ký ca thi của giảng viên
+Ba kiểu xem (nhớ lựa chọn của từng người), cùng có bộ lọc đợt / khoá / ngành:
+- **Danh sách** (mặc định): mỗi ca một dòng (Ngày · Ca · Khoá · Ngành · Môn · đã đăng ký/cần của tổ mình · nút Đăng ký). Chỉ hiện ca sắp tới và cần tổ của giảng viên; gộp **mọi đợt** nên đợt sát hoặc trùng ngày nhau vẫn thấy chung.
+- **Bảng theo đợt**: ngày × (ca, khoá-ngành), mỗi ô là số đã đăng ký / cần của tổ mình (đỏ = chưa ai, vàng = một phần, xanh = đủ, tím = của bạn).
+- **Bảng giảng viên**: mỗi đợt một bảng giống file mẫu của trường (hàng = giảng viên, dấu X).
+**Phía trên các dòng có khung xem trước** (cho danh sách và bảng theo đợt): bấm một ca thì
+1. **Lịch gác của bạn**: bảng các ca đã đăng ký, chèn **ca đang chọn** (tô màu) vào đúng vị trí theo thời gian, kèm câu "nằm sau ca … / trước ca … (cách n ngày)", cảnh báo **trùng giờ** và các ca đã có trong cùng ngày;
+2. **Chi tiết ngày**: bảng ca × Tổ 1 / Tổ 2 / Tổ 3 của cả ngày (gộp các đợt), ca của bạn trong ngày, danh sách người đã đăng ký ca đang chọn, nút Đăng ký / Huỷ.
+Hộp thoại **Xác nhận đăng ký** nêu rõ ngày, ca, giờ có mặt, khoá-ngành, môn và **ca gần nhất trước / sau** ca này.
 
 ## 4. Quy trình mỗi đợt thi
 1. Admin: **Tạo đợt thi mới** (trạng thái `SOAN`) → Đồng bộ.

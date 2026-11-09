@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#5661E0">
-<title>Đăng ký gác thi</title>
+<meta name="theme-color" content="#25225F">
+<title>Gác thi DNU</title>
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
@@ -13,66 +13,81 @@
 <body>
 
 <!-- Đăng nhập / từ chối / đang tải -->
-<div id="authWrap" class="aw-auth-wrap">
-  <section id="login" class="aw-auth-card" hidden>
-    <div class="aw-auth-head">
-      <span class="aw-logo-mark" id="authLogo"></span>
-      <h1 class="aw-auth-title">Đăng ký gác thi</h1>
-      <p class="aw-auth-sub">Khoa Ngoại ngữ · Trường ĐH Đồng Nai</p>
+<div id="authWrap" class="auth">
+  <section class="auth-hero" aria-hidden="true">
+    <div class="hero-top">
+      <span class="brand-mark big"><img src="logo.png" alt="" onload="this.parentNode.classList.add('has')" onerror="this.remove()"><i>DNU</i></span>
+      <div class="hero-org"><b>TRƯỜNG ĐẠI HỌC ĐỒNG NAI</b><span>KHOA NGOẠI NGỮ</span></div>
     </div>
-    <form id="loginForm" autocomplete="on">
-      <label for="email">Email</label>
-      <input class="field" id="email" name="email" type="email" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" required>
-      <label for="pw">Mật khẩu</label>
-      <input class="field" id="pw" name="password" type="password" autocomplete="current-password" required>
-      <label class="check"><input type="checkbox" id="showPw"> Hiện mật khẩu</label>
-      <div class="err" id="loginErr" role="alert"></div>
-      <div class="okmsg" id="loginInfo" role="status"></div>
-      <button class="primary wide" type="submit">Đăng nhập</button>
-      <p class="small center-t">Lần đầu đăng nhập, dùng mật khẩu mặc định do khoa cấp, sau đó vào <b>Cài đặt</b> để đổi.</p>
-      <p class="center-t"><button type="button" class="link" id="btnForgot">Quên mật khẩu?</button></p>
-    </form>
+    <div class="hero-title"><span class="hero-ic" id="heroIc"></span><h2>Hệ thống<br>Đăng ký gác thi</h2></div>
+    <div class="hero-foot">Đăng ký, theo dõi và quản lý ca gác thi nhanh gọn.</div>
   </section>
 
-  <section id="denied" class="aw-auth-card center" hidden>
-    <p><b id="deniedEmail"></b><br>không có trong danh sách giảng viên.</p>
-    <p>Hãy đăng nhập bằng email khác, hoặc liên hệ thư ký khoa để được thêm.</p>
-    <button id="btnOut2">Đăng xuất</button>
-  </section>
+  <div class="auth-side">
+    <section id="login" class="auth-card" hidden>
+      <h1>Đăng nhập</h1>
+      <p class="auth-sub">Sử dụng tài khoản do Khoa cấp</p>
+      <form id="loginForm" autocomplete="on">
+        <label for="email">Email</label>
+        <div class="inp"><span class="inp-ic" id="icMail"></span><input id="email" name="email" type="email" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" required></div>
+        <label for="pw">Mật khẩu</label>
+        <div class="inp"><span class="inp-ic" id="icLock"></span><input id="pw" name="password" type="password" autocomplete="current-password" required>
+          <button type="button" class="inp-eye" id="btnEye" aria-label="Hiện mật khẩu"></button></div>
+        <div class="row-between">
+          <label class="check"><input type="checkbox" id="remember" checked> Nhớ email</label>
+          <button type="button" class="link" id="btnForgot">Quên mật khẩu?</button>
+        </div>
+        <div class="err" id="loginErr" role="alert"></div>
+        <div class="okmsg" id="loginInfo" role="status"></div>
+        <button class="primary wide" type="submit">Đăng nhập</button>
+        <ul class="auth-notes">
+          <li>Lần đầu đăng nhập dùng mật khẩu do Khoa cấp.</li>
+          <li>Hệ thống sẽ yêu cầu đổi mật khẩu khi bạn còn dùng mật khẩu do Khoa cấp.</li>
+        </ul>
+      </form>
+    </section>
 
-  <div id="loading" class="center muted">Đang tải…</div>
+    <section id="denied" class="auth-card center" hidden>
+      <p><b id="deniedEmail"></b><br>không có trong danh sách giảng viên.</p>
+      <p>Hãy đăng nhập bằng email khác, hoặc liên hệ thư ký khoa để được thêm.</p>
+      <button id="btnOut2">Đăng xuất</button>
+    </section>
+
+    <div id="loading" class="center muted">Đang tải…</div>
+  </div>
 </div>
 
-<!-- Sau đăng nhập: thanh biểu tượng bên trái + thanh tiêu đề (giống ArticuWrite) -->
-<div id="app" class="aw-shell" hidden>
-  <aside class="aw-side" id="awSide">
-    <a class="aw-logo" href="#" aria-label="Đăng ký gác thi"><span class="aw-logo-mark" id="railLogo"></span></a>
+<!-- Sau đăng nhập: thanh bên xanh đêm + nội dung -->
+<div id="app" class="shell" hidden>
+  <aside class="side" id="awSide">
+    <div class="brand"><span class="brand-mark"><img src="logo.png" alt="" onload="this.parentNode.classList.add('has')" onerror="this.remove()"><i>DNU</i></span><b>Gác thi DNU</b></div>
     <nav id="awNav" aria-label="Điều hướng"></nav>
-    <div class="aw-side-foot">
-      <div class="aw-avatar" id="awAvatar"></div>
-      <button class="aw-nav" id="btnOut" title="Đăng xuất"><span id="icLogout"></span><span>Thoát</span></button>
-    </div>
   </aside>
 
-  <div class="aw-main">
-    <header class="aw-topbar">
-      <div>
-        <div class="aw-eyebrow" id="awEyebrow"></div>
-        <h1 class="aw-page-title" id="awPageTitle"></h1>
-      </div>
-      <div class="aw-topbar-right">
-        <div class="aw-user"><div class="aw-avatar" id="awAvatar2"></div>
-          <div><div class="aw-user-name" id="awUserName"></div><div class="aw-user-role" id="awUserRole"></div></div></div>
+  <div class="main">
+    <header class="topbar">
+      <div><h1 id="awPageTitle"></h1><div class="topsub" id="awSub"></div></div>
+      <div class="topbar-right">
+        <button class="user" id="userBtn" aria-haspopup="true" aria-expanded="false">
+          <span class="avatar" id="awAvatar"></span><span class="uname" id="awUserName"></span><span class="uchev" id="icChev"></span>
+        </button>
+        <div class="umenu" id="userMenu" hidden>
+          <div class="ucard"><b id="awUserName2"></b><span id="awUserRole"></span></div>
+          <button data-go="settings">Cài đặt</button>
+          <button id="btnOut" class="danger">Đăng xuất</button>
+        </div>
       </div>
     </header>
 
-    <main class="aw-content" id="awContent">
+    <main class="content" id="awContent">
       <div id="pwBanner" class="banner" hidden>
-        Bạn đang dùng mật khẩu do khoa cấp. Nên đổi mật khẩu để người khác không đăng ký thay bạn.
+        <b>Bạn đang dùng mật khẩu do Khoa cấp.</b> Hãy đổi mật khẩu để người khác không đăng ký thay bạn.
         <button class="primary" id="btnPwNow">Đổi mật khẩu ngay</button>
       </div>
 
-      <section id="settings" class="card" hidden>
+      <div id="subnav" class="seg subnav" hidden></div>
+
+      <section id="settings" class="card narrow" hidden>
         <h2>Đổi mật khẩu</h2>
         <form id="pwForm" autocomplete="off">
           <label for="curPw">Mật khẩu hiện tại</label>

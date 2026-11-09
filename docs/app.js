@@ -1,23 +1,21 @@
-// Đăng nhập, nạp dữ liệu, điều hướng và các trang của giảng viên (Tổng quan, Đăng ký ca thi).
+// Đăng nhập, nạp dữ liệu realtime, khung ứng dụng (thanh bên, tiêu đề) và điều hướng giữa các trang.
 import {
   signInWithEmailAndPassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential,
   updatePassword, signOut, onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { doc, getDoc, updateDoc, collection, query, where, onSnapshot, writeBatch, serverTimestamp }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { doc, getDoc, updateDoc, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { resetUrl } from "./firebase-config.js";
-import {
-  auth, db, S, $, esc, toast, ask, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, dmyOf, fmtLong, todayIso, khoaNam,
-  isManager, statusOf, isRegOpen, STATUS_LABEL, needOf, visibleSlots, findSlot, chipsHtml, manageTos,
-} from "./core.js";
+import { auth, db, S, $, esc, toast, TO_LABEL, TO_SHORT, isManager } from "./core.js";
 import { IC, LOGO, icon } from "./icons.js";
-import { statsHtml, addHtml, refreshAddList, manageClick, manageChange } from "./manage.js";
+import { overviewHtml, mineHtml, registerHtml, meClick, meChange, afterRender } from "./me.js";
+import { statsHtml, addHtml, slotsHtml, refreshAddList, manageClick, manageChange } from "./manage.js";
 
 // =====================================================================  Đăng nhập
 const EMAIL_KEY = "gacthi.email";
 const store = {
   get: (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* bỏ qua */ } },
+  del: (k) => { try { localStorage.removeItem(k); } catch { /* bỏ qua */ } },
 };
 const authMsg = (code) => ({
   "auth/invalid-credential": "Email hoặc mật khẩu chưa đúng.",
@@ -37,12 +35,11 @@ function show(id) {
   $("app").hidden = id !== "app";
 }
 // biểu tượng cố định
-$("authLogo").innerHTML = LOGO; $("railLogo").innerHTML = LOGO;
-$("icLogout").innerHTML = IC.logout;
+$("heroIc").innerHTML = LOGO; $("icMail").innerHTML = IC.mail; $("icLock").innerHTML = IC.lock; $("btnEye").innerHTML = IC.eye; $("icChev").innerHTML = IC.chevron;
 
-$("email").value = store.get(EMAIL_KEY);
-S.regView = store.get("gacthi.regView") === "table" ? "table" : "list";                // ô email luôn nhớ email lần trước
-$("showPw").onchange = (e) => ($("pw").type = e.target.checked ? "text" : "password");
+$("email").value = store.get(EMAIL_KEY);                // ô email nhớ email lần trước
+S.regView = ["list", "matrix", "grid"].includes(store.get("gacthi.regView")) ? store.get("gacthi.regView") : "list";
+$("btnEye").onclick = () => { const p = $("pw"); p.type = p.type === "password" ? "text" : "password"; $("btnEye").setAttribute("aria-label", p.type === "password" ? "Hiện mật khẩu" : "Ẩn mật khẩu"); };
 
 $("loginForm").onsubmit = async (e) => {
   e.preventDefault();
@@ -50,7 +47,7 @@ $("loginForm").onsubmit = async (e) => {
   $("loginErr").textContent = ""; $("loginInfo").textContent = "";
   try {
     await signInWithEmailAndPassword(auth, email, pw);
-    store.set(EMAIL_KEY, email);
+    if ($("remember").checked) store.set(EMAIL_KEY, email); else store.del(EMAIL_KEY);
     $("pw").value = "";
   } catch (err) { $("loginErr").textContent = authMsg(err.code); }
 };
@@ -72,17 +69,94 @@ $("btnForgot").onclick = async () => {
   finally { $("btnForgot").disabled = false; }
 };
 
-$("btnOut").onclick = $("btnOut2").onclick = $("btnOutSet").onclick = () => signOut(auth);
+$("btnOut").onclick = $("btnOut2").onclick = $("btnOutSet").onclick = () => { $("userMenu").hidden = true; signOut(auth); };
 
-// Cài đặt: đổi mật khẩu (một trang riêng trên thanh bên trái)
-const defaultRoute = () => (isManager() ? "mg:stats" : "me:overview");
+// =====================================================================  Điều hướng
+const ROUTES = {
+  "me:overview": { label: "Tổng quan", short: "Tổng quan", title: "Tổng quan", icon: "home" },
+  "me:register": { label: "Đăng ký ca thi", short: "Đăng ký", title: "Đăng ký ca thi", icon: "calendarCheck" },
+  "me:mine": { label: "Ca của tôi", short: "Của tôi", title: "Ca của tôi", icon: "listCheck" },
+  "me:history": { label: "Lịch sử gác thi", short: "Lịch sử", title: "Lịch sử gác thi", icon: "history" },
+  "mg:stats": { label: "Thống kê giảng viên", short: "Thống kê", title: "Thống kê giảng viên", icon: "users" },
+  "mg:add": { label: "Thêm ca thi mới", short: "Thêm ca", title: "Thêm ca thi mới", icon: "calendarPlus" },
+  "mg:slots": { label: "Danh sách ca thi", short: "Danh sách", title: "Danh sách ca thi", icon: "list" },
+  "settings": { label: "Cài đặt", short: "Cài đặt", title: "Cài đặt", icon: "settings" },
+};
+const defaultRoute = () => (S.me.pwTemp ? "settings" : isManager() ? "mg:stats" : "me:overview");   // còn dùng mật khẩu do Khoa cấp → mở Cài đặt trước
+
 function go(route) {
   S.route = route;
+  $("userMenu").hidden = true;
   render();
   window.scrollTo({ top: 0 });
 }
-$("btnSetClose").onclick = () => go(defaultRoute());
+document.addEventListener("click", (e) => {
+  const g = e.target.closest("[data-go]");
+  if (g) { go(g.dataset.go); return; }
+  const n = e.target.closest("[data-nav]");
+  if (n) { go(n.dataset.nav); return; }
+  if (!e.target.closest("#userBtn,#userMenu")) $("userMenu").hidden = true;
+});
+$("userBtn").onclick = () => { $("userMenu").hidden = !$("userMenu").hidden; };
 $("btnPwNow").onclick = () => go("settings");
+$("btnSetClose").onclick = () => go(isManager() ? "mg:stats" : "me:overview");
+
+const initials = (n) => String(n || "?").trim().split(/\s+/).slice(-2).map((w) => w[0] || "").join("").toUpperCase();
+const roleLabel = () => (S.me.admin ? "Quản trị toàn khoa" : S.me.leadTo ? `Tổ trưởng – Tổ ${TO_LABEL[S.me.leadTo]}` : `Giảng viên – Tổ ${TO_LABEL[S.me.to] || ""}`);
+const scopeText = () => (S.me.admin ? "Toàn khoa (cả 3 tổ)" : `Tổ ${TO_LABEL[S.me.leadTo]}`);
+
+function navHtml() {
+  const item = (k, cls = "") => `<button class="nav-item ${cls} ${S.route === k ? "active" : ""}" data-nav="${k}" ${S.route === k ? 'aria-current="page"' : ""}>${icon(ROUTES[k].icon)}<span>${esc(ROUTES[k].short)}</span></button>`;
+  const full = (k, cls = "") => item(k, cls).replace(`<span>${esc(ROUTES[k].short)}</span>`, `<span>${esc(ROUTES[k].label)}</span>`);
+  let h = full("me:overview") + full("me:register") + full("me:mine") + full("me:history", "d-only");
+  if (isManager()) {
+    h += `<div class="nav-group d-only">${icon("users")}Quản lý</div>` + ["mg:stats", "mg:add", "mg:slots"].map((k) => full(k, "nav-sub d-only")).join("");
+    h += `<button class="nav-item m-only ${S.route.startsWith("mg:") ? "active" : ""}" data-nav="mg:stats">${icon("users")}<span>Quản lý</span></button>`;   // điện thoại: một mục gọn
+  }
+  return h + full("settings");
+}
+
+function render() {
+  if (!S.me || !S.cfg || $("app").hidden) return;
+  const mgr = isManager();
+  if (!ROUTES[S.route] || (S.route.startsWith("mg:") && !mgr)) S.route = defaultRoute();
+  const r = ROUTES[S.route];
+
+  $("awNav").innerHTML = navHtml();
+  $("awPageTitle").textContent = r.title;
+  $("awSub").textContent = S.route.startsWith("mg:") ? `Quản lý · ${scopeText()}` : "";
+  $("awAvatar").textContent = initials(S.me.name);
+  $("awUserName").textContent = $("awUserName2").textContent = S.me.name || S.me.email;
+  $("awUserRole").textContent = roleLabel();
+  $("pwBanner").hidden = !S.me.pwTemp || S.route === "settings";
+  // điện thoại: ba trang Quản lý chuyển qua lại bằng thanh chọn phía trên (thanh dưới chỉ có một mục "Quản lý")
+  $("subnav").hidden = !S.route.startsWith("mg:");
+  if (!$("subnav").hidden) $("subnav").innerHTML = ["mg:stats", "mg:add", "mg:slots"].map((k) => `<button class="${S.route === k ? "on" : ""}" data-go="${k}">${esc(ROUTES[k].short)}</button>`).join("");
+  $("settings").hidden = S.route !== "settings";
+  $("page").hidden = S.route === "settings";
+  if (S.route === "settings") return;
+
+  const page = $("page");
+  if (S.route === "mg:add") {                       // trang có ô nhập: không vẽ lại cả trang khi dữ liệu realtime đổi
+    if (!$("addForm")) page.innerHTML = addHtml();
+    return;
+  }
+  if (S.route === "mg:slots") {
+    if (!$("slotsPage")) page.innerHTML = slotsHtml();
+    refreshAddList();
+    return;
+  }
+  const scroll = [...page.querySelectorAll(".tbl-wrap")].map((w) => [w.scrollLeft, w.scrollTop]);
+  page.innerHTML = { "me:overview": overviewHtml, "me:mine": () => mineHtml("upcoming"), "me:history": () => mineHtml("past"), "me:register": registerHtml, "mg:stats": statsHtml }[S.route]();
+  page.querySelectorAll(".tbl-wrap").forEach((w, i) => { if (scroll[i] && w.id !== "pvwrap") { w.scrollLeft = scroll[i][0]; w.scrollTop = scroll[i][1]; } });
+  if (S.route === "me:register") afterRender();
+}
+S.render = render;
+
+$("page").onclick = (e) => { if (manageClick(e)) return; meClick(e, { store }); };
+$("page").onchange = (e) => { if (manageChange(e)) return; meChange(e); };
+
+// =====================================================================  Cài đặt: đổi mật khẩu
 $("pwForm").onsubmit = async (e) => {
   e.preventDefault();
   const cur = $("curPw").value, n1 = $("newPw").value, n2 = $("newPw2").value;
@@ -94,7 +168,7 @@ $("pwForm").onsubmit = async (e) => {
     await updatePassword(auth.currentUser, n1);
     S.me.pwTemp = false;
     updateDoc(doc(db, "teachers", S.me.email), { pwTemp: false }).catch(() => {});   // tắt nhắc đổi mật khẩu
-    $("pwForm").reset(); go(defaultRoute());
+    $("pwForm").reset(); go(isManager() ? "mg:stats" : "me:overview");
     toast("Đã đổi mật khẩu.");
   } catch (err) { $("pwErr").textContent = err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" ? "Mật khẩu hiện tại chưa đúng." : authMsg(err.code); }
 };
@@ -103,7 +177,7 @@ $("pwForm").onsubmit = async (e) => {
 onAuthStateChanged(auth, async (u) => {
   S.unsub.forEach((f) => f()); S.unsub = [];
   Object.values(S.unsubDots).forEach((f) => f()); S.unsubDots = {};
-  Object.assign(S, { user: u, me: null, dots: [], slotsBy: {}, regsBy: {}, roster: [], myYear: [], teachersAll: [], openGv: null });
+  Object.assign(S, { user: u, me: null, dots: [], slotsBy: {}, regsBy: {}, roster: [], myYear: [], teachersAll: [], openGv: null, pick: null });
   if (!u) return show("login");
   show("loading");
   const email = u.email.toLowerCase();
@@ -136,7 +210,7 @@ onAuthStateChanged(auth, async (u) => {
     S.myYear = qs.docs.map((d) => ({ id: d.id, ...d.data() }));
     S.render();
   }));
-  S.route = defaultRoute();                         // tổ trưởng mở vào trang Quản lý trước
+  S.route = defaultRoute();
   show("app");
   S.render();
 });
@@ -151,316 +225,4 @@ function subscribeDot(id) {
     S.render();
   });
   S.unsubDots[id] = () => { a(); b(); };
-}
-
-// =====================================================================  Điều hướng
-const dotOf = (s) => S.dots.find((d) => d.id === s.dotId);
-const openFirst = (a, b) => (isRegOpen(b) - isRegOpen(a)) || (b.order || 0) - (a.order || 0);
-
-const ROUTES = {
-  "mg:stats":    { label: "Thống kê", title: "Thống kê giảng viên", icon: "progress" },
-  "mg:add":      { label: "Thêm ca", title: "Thêm ca thi mới", icon: "calendarPlus" },
-  "me:overview": { label: "Tổng quan", title: "Tổng quan của tôi", icon: "overview" },
-  "me:register": { label: "Đăng ký", title: "Đăng ký ca thi", icon: "tasks" },
-  "settings":    { label: "Cài đặt", title: "Cài đặt", icon: "settings" },
-};
-/** Các mục trên thanh bên trái; tổ trưởng có thêm nhóm "Quản lý". */
-const navKeys = () => (isManager() ? [["Quản lý"], "mg:stats", "mg:add", ["Cá nhân"]] : []).concat(["me:overview", "me:register", "settings"]);
-const initials = (n) => String(n || "?").trim().split(/\s+/).slice(-2).map((w) => w[0] || "").join("").toUpperCase();
-const roleLabel = () => (S.me.admin ? "Quản trị toàn khoa" : S.me.leadTo ? `Tổ trưởng ${TO_SHORT[S.me.leadTo]}` : `Giảng viên · ${TO_SHORT[S.me.to] || ""}`);
-const scopeText = () => (S.me.admin ? "Toàn khoa" : `Tổ ${TO_LABEL[S.me.leadTo]}`);
-
-function render() {
-  if (!S.me || !S.cfg || $("app").hidden) return;
-  const mgr = isManager();
-  if (!ROUTES[S.route] || (S.route.startsWith("mg:") && !mgr)) S.route = defaultRoute();
-  const r = ROUTES[S.route];
-
-  // thanh bên trái + tiêu đề
-  $("awNav").innerHTML = navKeys().map((k) => Array.isArray(k)
-    ? `<div class="aw-nav-group">${esc(k[0])}</div>`
-    : `<button class="aw-nav ${k === S.route ? "active" : ""}" data-nav="${k}" ${k === S.route ? 'aria-current="page"' : ""}>${icon(ROUTES[k].icon)}<span>${esc(ROUTES[k].label)}</span></button>`).join("");
-  $("awPageTitle").textContent = r.title;
-  $("awEyebrow").textContent = S.route.startsWith("mg:") ? `Quản lý · ${scopeText()}` : S.route === "settings" ? S.me.email : `Năm học ${S.cfg.namHoc || ""}`;
-  $("awAvatar").textContent = $("awAvatar2").textContent = initials(S.me.name);
-  $("awUserName").textContent = S.me.name || S.me.email;
-  $("awUserRole").textContent = roleLabel();
-  $("pwBanner").hidden = !S.me.pwTemp || S.route === "settings";
-  $("settings").hidden = S.route !== "settings";
-  $("page").hidden = S.route === "settings";
-  if (S.route === "settings") return;
-
-  const page = $("page");
-  if (S.route === "mg:add") {                     // trang có ô nhập: không vẽ lại cả trang khi dữ liệu realtime đổi
-    if (!$("addForm")) page.innerHTML = addHtml();
-    refreshAddList();
-    return;
-  }
-  const scroll = [...page.querySelectorAll(".tbl-wrap")].map((w) => [w.scrollLeft, w.scrollTop]);
-  page.innerHTML = S.route === "mg:stats" ? statsHtml() : S.route === "me:overview" ? overviewMeHtml() : registerHtml();
-  page.querySelectorAll(".tbl-wrap").forEach((w, i) => { if (scroll[i]) { w.scrollLeft = scroll[i][0]; w.scrollTop = scroll[i][1]; } });
-}
-S.render = render;
-
-$("awNav").onclick = (e) => { const b = e.target.closest("[data-nav]"); if (b) go(b.dataset.nav); };
-$("page").onchange = (e) => { manageChange(e); };
-$("page").onclick = (e) => {
-  if (manageClick(e)) return;
-  let el;
-  if ((el = e.target.closest("[data-fk]"))) { S.fKhoa = el.dataset.fk; return render(); }
-  if ((el = e.target.closest("[data-fn]"))) { S.fNganh = el.dataset.fn; return render(); }
-  if ((el = e.target.closest("[data-reg],[data-cancel]"))) {
-    const s = findSlot(el.dataset.reg || el.dataset.cancel);
-    if (s) { if (el.dataset.reg) register(s); else cancel(s); }
-    return;
-  }
-  if ((el = e.target.closest("[data-rv]"))) { S.regView = el.dataset.rv; store.set("gacthi.regView", S.regView); return render(); }
-  if ((el = e.target.closest("[data-pick]"))) {              // bấm một dòng: xem trước cả ngày ở trên
-    S.pick = el.dataset.pick; render();
-    $("preview")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-};
-
-// =====================================================================  Trang 1: Tổng quan của tôi
-function overviewMeHtml() {
-  const min = S.cfg.minCa || 20, prior = Number(S.me.prior || 0), today = todayIso();
-  const regs = [...S.myYear].sort((a, b) => a.date.localeCompare(b.date) || a.ca - b.ca);
-  const past = regs.filter((r) => r.date < today).length, upcoming = regs.length - past;
-  const done = prior + past, total = prior + regs.length, short = Math.max(0, min - total);
-  const pct = Math.min(100, Math.round((total / min) * 100));
-  const rows = regs.map((r) => {
-    const s = findSlot(r.slotId), ci = caInfo(r.ca), dot = S.dots.find((d) => d.id === r.dotId);
-    return `<tr><td>${esc(fmtLong(r.date))}</td><td>Ca ${r.ca} · ${ci.start}</td><td>${s ? `K${esc(s.khoa)} ${esc(s.nganh)}` : ""}</td><td>${esc(s?.mon || "")}</td><td>${esc(dot?.name || "")}</td>
-      <td><span class="pill ${r.date < today ? "ok" : "warn"}">${r.date < today ? "Đã gác" : "Sắp tới"}</span></td></tr>`;
-  }).join("");
-  return `<div class="card">
-      <div class="muted">Xin chào <b>${esc(S.me.name || S.me.email)}</b> · Tổ ${esc(TO_LABEL[S.me.to] || "?")}</div>
-      <div class="progress-row"><span class="big">${total} / ${min} ca</span>
-        <span class="pill ${short ? "warn" : "ok"}">${short ? `Còn thiếu ${short} ca` : "Đã đủ số ca"}</span></div>
-      <div class="bar ${short ? "" : "done"}"><i style="width:${pct}%"></i></div>
-      <div class="muted">Năm học ${esc(S.cfg.namHoc || "")} (tính cả các đợt thi)</div>
-    </div>
-    <div class="kpis3">
-      <div class="card kpi"><div class="small">Đã gác thi</div><div class="big">${done}</div><div class="small">gồm ${prior} ca trước khi dùng app</div></div>
-      <div class="card kpi"><div class="small">Sắp tới</div><div class="big">${upcoming}</div><div class="small">đã đăng ký, chưa diễn ra</div></div>
-      <div class="card kpi"><div class="small">Còn thiếu</div><div class="big">${short}</div><div class="small">để đủ ${min} ca</div></div>
-    </div>
-    <h2 class="sec">Các ca tôi đã đăng ký</h2>
-    <div class="tbl-wrap"><table class="list"><thead><tr><th>Ngày</th><th>Ca</th><th>Khoá - Ngành</th><th>Môn</th><th>Đợt</th><th></th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="6" class="muted">Bạn chưa đăng ký ca nào. Vào tab "Đăng ký ca thi" để chọn.</td></tr>`}</tbody></table></div>`;
-}
-
-// =====================================================================  Trang 2: Đăng ký ca thi (bảng giống file mẫu)
-/** Lý do GV không đăng ký được ô này (null = được). cnt = số người đã đăng ký theo tổ của ca. */
-function reason(s, cnt) {
-  if (!isRegOpen(dotOf(s))) return "Đã đóng đăng ký";
-  const to = S.me.to;
-  if (!needOf(s, to)) return "Ca này không cần tổ của bạn";
-  if ((cnt?.["t" + to] || 0) >= needOf(s, to)) return "Tổ của bạn đã đủ người";
-  if (S.myYear.find((r) => r.date === s.date && r.ca === s.ca)) return "Bạn đã có ca khác cùng giờ";
-  return null;
-}
-
-function registerHtml() {
-  const dots = S.dots.filter((d) => statusOf(d) !== "SOAN").sort(openFirst);      // đợt đang soạn lịch chưa hiện cho GV
-  if (!dots.length) return `<div class="card center muted">Hiện chưa có đợt thi nào mở đăng ký.</div>`;
-  const all = dots.flatMap((d) => visibleSlots(d.id));
-  const khoas = [...new Set(all.map((s) => s.khoa))].sort((a, b) => a - b);
-  const nganhs = [...new Set(all.map((s) => s.nganh))].sort();
-  const mine = new Set(S.myYear.map((r) => r.slotId));
-  const head = `<div class="chips viewtoggle">${chipsHtml([["list", "Dạng danh sách"], ["table", "Dạng bảng"]], S.regView, "rv")}</div>
-    <div class="filters">
-      <div class="fl">Lọc theo khoá</div>
-      <div class="chips">${chipsHtml([["all", "Mọi khoá"], ...khoas.map((k) => [k, `Khoá ${k}` + (khoaNam(k) ? ` (năm ${khoaNam(k)})` : "")])], S.fKhoa, "fk")}</div>
-      <div class="fl">Lọc theo ngành</div>
-      <div class="chips">${chipsHtml([["all", "Mọi ngành"], ...nganhs.map((n) => [n, n])], S.fNganh, "fn")}</div>
-    </div>`;
-  if (S.regView === "list") return head + listView(dots, mine);
-  return head + `<p class="legend"><span class="cell free sm">+</span> bấm để đăng ký · <span class="cell mine sm">✔</span> ca của bạn, bấm để huỷ · <b>X</b> đồng nghiệp đã đăng ký. Vuốt ngang để xem các ngày khác.</p>` +
-    dots.map((d) => tableFor(d, mine)).join("");
-}
-
-// ---------------------------------------------------------------------  Dạng danh sách + bảng xem trước cả ngày
-// Ca của nhiều đợt có thể sát ngày hoặc trùng ngày nhau, nên danh sách gộp mọi đợt theo ngày
-// và bảng xem trước của một ngày gồm cả ca của các đợt khác nhau.
-const countsOf = (dotId) => {
-  const c = {};
-  for (const r of S.regsBy[dotId] || []) (c[r.slotId] ||= { t1: 0, t2: 0, t3: 0 })["t" + r.to]++;
-  return c;
-};
-/** Trạng thái của một ca với tổ của tôi: mine | open (còn chỗ) | full | na (ca không cần tổ tôi). */
-function stateOf(s, cnt, mine) {
-  if (mine.has(s.id)) return { k: "mine", t: "✔ Của bạn" };
-  const need = needOf(s, S.me.to);
-  if (!need) return { k: "na", t: "–" };
-  const left = need - (cnt[s.id]?.["t" + S.me.to] || 0);
-  return left > 0 ? { k: "open", t: `Còn ${left}`, left } : { k: "full", t: "Đủ" };
-}
-const dotName = (id) => S.dots.find((d) => d.id === id)?.name || "";
-
-function actionHtml(s, cnt, mine) {
-  if (mine.has(s.id)) return `<button class="danger" data-cancel="${esc(s.id)}" ${isRegOpen(dotOf(s)) ? "" : "disabled"}>Huỷ ca này</button>`;
-  const why = reason(s, cnt[s.id]);
-  if (!why) return `<button class="primary" data-reg="${esc(s.id)}">Đăng ký</button>`;
-  return needOf(s, S.me.to) && why !== "Tổ của bạn đã đủ người" ? `<span class="small">${esc(why)}</span>` : "";
-}
-
-function listView(dots, mine) {
-  const cnts = Object.fromEntries(dots.map((d) => [d.id, countsOf(d.id)]));
-  const cntOf = (s) => cnts[s.dotId] || {};
-  const every = dots.flatMap((d) => visibleSlots(d.id));
-  const items = every.filter((s) => (S.fKhoa === "all" || String(s.khoa) === S.fKhoa) && (S.fNganh === "all" || s.nganh === S.fNganh))
-    .sort((a, b) => a.date.localeCompare(b.date) || a.ca - b.ca || a.khoa - b.khoa || a.nganh.localeCompare(b.nganh));
-  if (!items.length) return `<div class="card center muted">Không có ca nào khớp bộ lọc.</div>`;
-  if (!S.pick || !every.some((s) => s.id === S.pick)) {                // mặc định chọn ca gần nhất chưa diễn ra
-    const t = todayIso();
-    S.pick = (items.find((s) => s.date >= t) || items[0]).id;
-  }
-  const multi = dots.length > 1;
-  let html = "", last = "";
-  for (const s of items) {
-    if (s.date !== last) { html += `<div class="dayhead">${esc(fmtLong(s.date))}</div>`; last = s.date; }
-    const st = stateOf(s, cntOf(s), mine), ci = caInfo(s.ca);
-    html += `<div class="crow ${st.k} ${s.id === S.pick ? "picked" : ""}" data-pick="${esc(s.id)}">
-      <div class="cr-ca"><b>Ca ${s.ca}</b><span>${ci.start}</span></div>
-      <div class="cr-main"><div class="cr-t">Khoá ${esc(s.khoa)} · ${esc(s.nganh)}</div>
-        <div class="small">${esc(s.mon || "")}${multi ? `${s.mon ? " · " : ""}${esc(dotName(s.dotId))}` : ""}</div></div>
-      <div class="cr-st"><span class="st ${st.k}">${esc(st.t === "–" ? "Không cần tổ bạn" : st.t)}</span></div>
-      <div class="cr-act">${actionHtml(s, cnts, mine)}</div></div>`;
-  }
-  return `<div id="preview">${previewHtml(every, cnts, mine)}</div><div class="clist">${html}</div>`;
-}
-
-function previewHtml(every, cnts, mine) {
-  const p = every.find((s) => s.id === S.pick);
-  if (!p) return "";
-  const day = every.filter((s) => s.date === p.date);
-  const cols = [...new Set(day.map((s) => `${s.khoa}|${s.nganh}`))].sort((a, b) => Number(a.split("|")[0]) - Number(b.split("|")[0]) || a.localeCompare(b));
-  const cas = [...new Set(day.map((s) => s.ca))].sort((a, b) => a - b);
-  const head = cols.map((c) => { const [k, n] = c.split("|"); return `<th>K${esc(k)}<br><small>${esc(n)}</small></th>`; }).join("");
-  const body = cas.map((ca) => `<tr><th>Ca ${ca}<br><small>${caInfo(ca).start}</small></th>${cols.map((c) => {
-    const cell = day.filter((s) => s.ca === ca && `${s.khoa}|${s.nganh}` === c);
-    if (!cell.length) return `<td class="pvc empty"></td>`;
-    return `<td class="pvc ${cell.some((s) => s.id === S.pick) ? "sel" : ""}">${cell.map((s) => {
-      const st = stateOf(s, cnts[s.dotId] || {}, mine);
-      return `<button class="pv ${st.k} ${s.id === S.pick ? "sel" : ""}" data-pick="${esc(s.id)}">${esc(st.t)}</button>`;
-    }).join("")}</td>`;
-  }).join("")}</tr>`).join("");
-  const cnt = cnts[p.dotId] || {};
-  const regs = (S.regsBy[p.dotId] || []).filter((r) => r.slotId === p.id);
-  const tos = [1, 2, 3].filter((t) => needOf(p, t)).map((t) => `<span class="pill ${t === S.me.to ? "warn" : ""}">${esc(TO_SHORT[t])}: ${cnt[p.id]?.["t" + t] || 0}/${needOf(p, t)}</span>`).join(" ");
-  const mineToday = S.myYear.filter((r) => r.date === p.date).sort((a, b) => a.ca - b.ca).map((r) => {
-    const s = findSlot(r.slotId);
-    return `<li>Ca ${r.ca} · ${caInfo(r.ca).start} · ${s ? `Khoá ${esc(s.khoa)} ${esc(s.nganh)}` : ""}</li>`;
-  }).join("");
-  const ci = caInfo(p.ca);
-  return `<div class="card pvcard">
-    <div class="pv-title"><div><div class="small">Xem trước cả ngày</div><h2>${esc(fmtLong(p.date))}</h2></div></div>
-    <div class="tbl-wrap pvwrap"><table class="list pvt"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table></div>
-    <div class="pv-detail">
-      <div><b>Ca ${p.ca} · bắt đầu ${ci.start}</b> <span class="small">(có mặt tại HĐ thi lúc ${ci.arrive})</span></div>
-      <div>Khoá ${esc(p.khoa)} · ${esc(p.nganh)}${p.mon ? ` · ${esc(p.mon)}` : ""} <span class="small">· ${esc(dotName(p.dotId))}</span></div>
-      <div class="pv-tos">${tos}</div>
-      <div class="small">${regs.length ? "Đã đăng ký: " + regs.map((r) => esc(r.name)).join(", ") : "Chưa có ai đăng ký ca này."}</div>
-      ${mineToday ? `<div class="pv-mine"><b>Ca của bạn trong ngày này</b><ul>${mineToday}</ul></div>` : ""}
-      <div class="pv-act">${actionHtml(p, cnts[p.dotId] ? { [p.id]: cnts[p.dotId][p.id] } : {}, mine)}</div>
-    </div></div>`;
-}
-
-const TO_SHORT_LABEL = TO_SHORT;
-/** Một bảng = một đợt thi: cột = ca (ngày/ca/khoá-ngành), hàng = GV; giống tab xuất mẫu. */
-function tableFor(d, mine) {
-  const regs = S.regsBy[d.id] || [];
-  const slots = visibleSlots(d.id)
-    .filter((s) => (S.fKhoa === "all" || String(s.khoa) === S.fKhoa) && (S.fNganh === "all" || s.nganh === S.fNganh))
-    .sort((a, b) => a.date.localeCompare(b.date) || a.ca - b.ca || a.khoa - b.khoa || a.nganh.localeCompare(b.nganh));
-  const open = isRegOpen(d);
-  const stLabel = statusOf(d) === "MO" && !open ? "Đã hết hạn đăng ký" : STATUS_LABEL[statusOf(d)];
-  const head = `<div class="dot-head"><h2>${esc(d.name)}</h2><span class="pill ${open ? "ok" : "bad"}">${esc(stLabel)}</span>
-    ${open && d.deadline ? `<span class="small">Hạn chót: ${esc(d.deadline.toDate().toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "numeric", year: "numeric" }))}</span>` : ""}</div>`;
-  if (!slots.length) return `<section class="dot">${head}<div class="card muted center">${visibleSlots(d.id).length ? "Không có ca nào khớp bộ lọc." : "Chưa có ca nào trong đợt này."}</div></section>`;
-
-  const cnt = {}, who = new Set(), perUser = {};
-  for (const r of regs) {
-    (cnt[r.slotId] ||= { t1: 0, t2: 0, t3: 0 })["t" + r.to]++;
-    who.add(r.slotId + "|" + r.email);
-    perUser[r.email] = (perUser[r.email] || 0) + 1;
-  }
-  const days = [];
-  for (const s of slots) { const last = days.at(-1); if (last && last.date === s.date) last.n++; else days.push({ date: s.date, n: 1 }); }
-  const rowDate = days.map((g) => `<th colspan="${g.n}" class="r0 date"><b>${dowOf(g.date)}</b><br>${dmOf(g.date)}</th>`).join("");
-  const rowCa = slots.map((s) => `<th class="r1">Ca ${s.ca}<br><small>${caInfo(s.ca).start}</small></th>`).join("");
-  const rowKn = slots.map((s) => `<th class="r2" title="${esc(s.mon || "")}">K${esc(s.khoa)}<br><small>${esc(s.nganh)}</small></th>`).join("");
-  const rowLeft = slots.map((s) => {
-    const need = needOf(s, S.me.to), left = need - (cnt[s.id]?.["t" + S.me.to] || 0);
-    return `<th class="r3 ${!need ? "na" : left > 0 ? "okc" : "bad"}">${!need ? "–" : left > 0 ? `Còn ${left}` : "Đủ"}</th>`;
-  }).join("");
-
-  const meRow = S.roster.find((r) => r.email === S.me.email) || { name: S.me.name, to: S.me.to };
-  const myCells = slots.map((s) => {
-    if (who.has(s.id + "|" + S.me.email)) return `<td class="mine"><button class="cell mine" data-cancel="${esc(s.id)}" ${open ? "" : "disabled"} aria-label="Huỷ ca ${s.ca} ngày ${dmOf(s.date)}">✔</button></td>`;
-    const why = reason(s, cnt[s.id]);
-    return why ? `<td class="na" title="${esc(why)}"><span class="cell na">–</span></td>`
-      : `<td><button class="cell free" data-reg="${esc(s.id)}" aria-label="Đăng ký ca ${s.ca} ngày ${dmOf(s.date)}">+</button></td>`;
-  }).join("");
-  const others = S.roster.filter((r) => r.email !== S.me.email).map((r) => {
-    const cells = slots.map((s) => `<td>${who.has(s.id + "|" + r.email) ? '<span class="x">X</span>' : ""}</td>`).join("");
-    return `<tr><th class="name">${esc(r.name)}<small>${esc(TO_SHORT_LABEL[r.to] || "")}</small></th>${cells}<td class="sum">${perUser[r.email] || 0}</td></tr>`;
-  }).join("");
-
-  const sumReg = slots.map((s) => `<td>${(cnt[s.id]?.t1 || 0) + (cnt[s.id]?.t2 || 0) + (cnt[s.id]?.t3 || 0)}</td>`).join("");
-  const sumNeed = slots.map((s) => `<td title="${[1, 2, 3].filter((t) => needOf(s, t)).map((t) => TO_SHORT[t] + ": " + needOf(s, t)).join(", ")}">${needOf(s, 1) + needOf(s, 2) + needOf(s, 3)}</td>`).join("");
-  const totReg = regs.filter((r) => slots.some((s) => s.id === r.slotId)).length;
-  const totNeed = slots.reduce((a, s) => a + needOf(s, 1) + needOf(s, 2) + needOf(s, 3), 0);
-
-  return `<section class="dot">${head}
-    <div class="tbl-wrap"><table class="sheet">
-      <thead>
-        <tr><th class="name corner" rowspan="4">Họ tên GV</th>${rowDate}<th class="sum corner" rowspan="4">Cộng</th></tr>
-        <tr>${rowCa}</tr><tr>${rowKn}</tr><tr>${rowLeft}</tr>
-      </thead>
-      <tbody>
-        <tr class="me"><th class="name"><b>Bạn</b><br>${esc(meRow.name)}<small>${esc(TO_SHORT_LABEL[meRow.to] || "")}</small></th>${myCells}<td class="sum">${perUser[S.me.email] || 0}</td></tr>
-        ${others}
-      </tbody>
-      <tfoot>
-        <tr><th class="name">Tổng đăng ký</th>${sumReg}<td class="sum">${totReg}</td></tr>
-        <tr><th class="name">SL được giao</th>${sumNeed}<td class="sum">${totNeed}</td></tr>
-      </tfoot>
-    </table></div></section>`;
-}
-
-/** Đăng ký: giữ một "chỗ" (claims) và ghi lượt đăng ký (regs) trong cùng một batch; luật Firestore bắt hai bên khớp nhau. */
-async function register(s) {
-  const to = S.me.to, email = S.me.email, ci = caInfo(s.ca);
-  if (!(await ask({ title: "Đăng ký gác thi?", ok: "Đăng ký", cancel: "Không",
-    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · bắt đầu ${ci.start}`], ["Có mặt tại HĐ thi", ci.arrive], ["Khoá - Ngành", `Khoá ${s.khoa} · ${s.nganh}`], ["Môn", s.mon || ""]] }))) return;
-  const regId = `${s.date}_${s.ca}__${email}`;
-  const need = needOf(s, to);
-  const used = new Set((S.regsBy[s.dotId] || []).filter((r) => r.slotId === s.id && r.to === to).map((r) => r.k));
-  const order = Array.from({ length: need }, (_, i) => i + 1).sort((a, b) => used.has(a) - used.has(b)); // chỗ trống trước
-  for (const k of order) {
-    const claimId = `${s.id}_t${to}_${k}`;
-    const b = writeBatch(db);
-    b.set(doc(db, "claims", claimId), { slotId: s.id, dotId: s.dotId, to, k, email, regId, namHoc: s.namHoc });
-    b.set(doc(db, "regs", regId), { slotId: s.id, dotId: s.dotId, namHoc: s.namHoc, date: s.date, ca: s.ca, email, name: S.me.name, to, k, claimId, createdAt: serverTimestamp() });
-    try { await b.commit(); toast("Đã đăng ký ca thi."); return; }
-    catch (e) { if (e.code !== "permission-denied") { toast("Lỗi mạng, thử lại: " + (e.code || e.message)); return; } }
-  }
-  toast("Không đăng ký được: ca vừa đủ người, đã đóng đăng ký, hoặc bạn đã có ca cùng giờ.");
-}
-
-async function cancel(s) {
-  const ci = caInfo(s.ca);
-  if (!(await ask({ title: "Huỷ đăng ký ca này?", ok: "Huỷ ca này", cancel: "Giữ lại", danger: true, ic: "clock",
-    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · ${ci.start}`], ["Khoá - Ngành", `Khoá ${s.khoa} · ${s.nganh}`]] }))) return;
-  const r = S.myYear.find((x) => x.slotId === s.id);
-  if (!r) return;
-  try {
-    const b = writeBatch(db);
-    b.delete(doc(db, "regs", r.id));
-    b.delete(doc(db, "claims", r.claimId));
-    await b.commit();
-    toast("Đã huỷ đăng ký.");
-  } catch (e) { toast("Không huỷ được (có thể đã hết hạn đăng ký)."); }
 }

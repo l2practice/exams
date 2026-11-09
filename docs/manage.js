@@ -5,7 +5,7 @@ import { scriptUrl } from "./firebase-config.js";
 import { icon } from "./icons.js";
 import {
   auth, db, S, $, esc, toast, ask, NGANH, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, fmtLong, todayIso, isoOf, parseDates, manageTos,
-  statusOf, canEditCa, STATUS_LABEL, needOf, slotId, visibleSlots, findSlot, khoaList, khoaNam, chipsHtml,
+  statusOf, canEditCa, STATUS_LABEL, needOf, slotId, visibleSlots, findSlot, khoaList, khoaNam,
 } from "./core.js";
 
 const dotName = (id) => S.dots.find((d) => d.id === id)?.name || "";
@@ -60,21 +60,26 @@ function missingHtml() {
 
 export function statsHtml() {
   const min = S.cfg.minCa || 20, all = peopleStats();
-  const nShort = all.filter((p) => p.short > 0).length;
-  const shown = all.filter((p) => S.gvFilter === "all" || p.short > 0);
-  const cols = S.me.admin ? 6 : 5;
-  const rows = shown.map((p) => `
+  const nShort = all.filter((p) => p.short > 0).length, nOk = all.length - nShort, sumDone = all.reduce((a, p) => a + p.total, 0);
+  const shown = all.filter((p) => S.gvFilter === "all" || (S.gvFilter === "short" ? p.short > 0 : p.short === 0));
+  const cols = S.me.admin ? 7 : 6;
+  const rows = shown.map((p, i) => `
     <tr class="gv-row ${S.openGv === p.email ? "open" : ""}" data-gv="${esc(p.email)}">
+      <td>${i + 1}</td>
       <td><button class="link">${S.openGv === p.email ? "▾" : "▸"} ${esc(p.name)}</button></td>
       ${S.me.admin ? `<td>${esc(TO_SHORT[p.to] || "")}</td>` : ""}
       <td><b>${p.total}</b> / ${min}</td><td>${p.done}</td><td>${p.upcoming}</td>
-      <td class="${p.short ? "bad" : "okc"}">${p.short ? "Thiếu " + p.short : "Đủ"}</td></tr>
-    ${S.openGv === p.email ? detailHtml(p, cols) : ""}`).join("");
-  return `<div class="card"><b>Phạm vi:</b> ${esc(scopeLabel())} · ${all.length} giảng viên · ${all.length - nShort} đã đủ ${min} ca · <b>${nShort}</b> chưa đủ</div>
-    <div class="chips">${chipsHtml([["all", `Tất cả (${all.length})`], ["short", `Chưa đủ ${min} ca (${nShort})`]], S.gvFilter, "gf")}<button class="chip" id="btnCsv">Tải CSV</button></div>
+      <td>${p.short}</td>
+      <td><span class="pill ${p.short ? "bad" : "ok"}">${p.short ? "Chưa đủ" : "Đủ"}</span></td></tr>
+    ${S.openGv === p.email ? detailHtml(p, cols + 1) : ""}`).join("");
+  const kpi = (cls, ic, v, l) => `<div class="kpi"><span class="kicon ${cls}">${icon(ic)}</span><div><div class="kv">${v}</div><div class="kl">${l}</div></div></div>`;
+  return `<div class="kpis4">${kpi("violet", "users", all.length, "Giảng viên")}${kpi("green", "checkCircle", nOk, `Đủ ${min} ca`)}${kpi("orange", "hourglass", nShort, "Chưa đủ")}${kpi("blue", "calendarCheck", sumDone, "Tổng số ca đã gác")}</div>
+    <div class="toolbar"><span class="pill p">Năm học ${esc(S.cfg.namHoc || "")}</span><span class="pill">${esc(scopeLabel())}</span><span class="grow"></span>
+      <select class="sel" data-sel="gvf" aria-label="Trạng thái">${[["all", "Tất cả trạng thái"], ["short", "Chưa đủ"], ["ok", "Đã đủ"]].map(([v, l]) => `<option value="${v}" ${S.gvFilter === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+      <button class="primary" id="btnCsv">${icon("list")} Tải CSV</button></div>
     <p class="small">Bấm vào tên giảng viên để xem chi tiết từng ca (ngày, giờ, khoá, ngành, môn).</p>
-    <div class="tbl-wrap"><table class="list"><thead><tr><th>Giảng viên</th>${S.me.admin ? "<th>Tổ</th>" : ""}<th>Số ca / định mức</th><th>Đã gác</th><th>Sắp tới</th><th>Tình trạng</th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="${cols}" class="muted">Không có giảng viên nào.</td></tr>`}</tbody></table></div>
+    <div class="tbl-wrap"><table class="list"><thead><tr><th>#</th><th>Giảng viên</th>${S.me.admin ? "<th>Tổ</th>" : ""}<th>Tổng ca</th><th>Đã gác</th><th>Sắp tới</th><th>Còn thiếu</th><th>Tình trạng</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="${cols + 1}" class="muted">Không có giảng viên nào.</td></tr>`}</tbody></table></div>
     ${missingHtml()}`;
 }
 
@@ -95,30 +100,18 @@ export function addHtml() {
   const tos = manageTos();
   return `<div id="addForm">
     <div class="card">
-      <h2>Chọn đợt và số giảng viên cần</h2>
+      <h2>Đợt thi và số giảng viên cần</h2>
       <p class="small">Bạn nhập số giảng viên cần của <b>${esc(scopeLabel())}</b>. Tổ khác tự nhập phần của họ cho cùng ca (cùng đợt, ngày, ca, khoá, ngành thì gộp vào một ca).</p>
       <label for="addDot">Đợt thi</label>
-      <select class="field" id="addDot">${dots.map((d) => `<option value="${esc(d.id)}">${esc(d.name)} (${esc(STATUS_LABEL[statusOf(d)])})</option>`).join("")}</select>
+      <select class="sel field" id="addDot">${dots.map((d) => `<option value="${esc(d.id)}">${esc(d.name)} (${esc(STATUS_LABEL[statusOf(d)])})</option>`).join("")}</select>
       <label>Số giảng viên cần mỗi ca</label>
       <div class="row">${tos.map((t) => `<div class="need-in"><span>${esc(TO_LABEL[t])}</span><input class="field" id="addNeed${t}" type="number" min="0" max="20" value="1" inputmode="numeric"></div>`).join("")}</div>
     </div>
 
-    <div class="card scanbox">
-      <h2><span class="ic-inline">${icon("sparkle")}</span> Quét lịch thi từ ảnh (AI)</h2>
-      <p class="small">Chụp bảng lịch thi hoặc chọn ảnh có sẵn (kể cả ảnh chụp màn hình). AI điền sẵn ngày, ca, khoá, ngành, môn; <b>bạn kiểm tra và sửa</b> trước khi thêm. AI có thể đọc sai nên không có gì được lưu cho tới khi bạn bấm Thêm.</p>
-      <div class="two">
-        <label class="filebtn primary" for="scanCam">${icon("camera")} Chụp bằng camera</label>
-        <label class="filebtn" for="scanFile">${icon("image")} Chọn ảnh</label>
-      </div>
-      <input type="file" id="scanCam" accept="image/*" capture="environment" hidden>
-      <input type="file" id="scanFile" accept="image/*" hidden>
-      <div class="err" id="scanErr" role="alert"></div>
-      <div class="okmsg" id="scanMsg" role="status"></div>
-      <div id="scanPreview"></div>
-    </div>
+    <div class="seg" style="margin-bottom:14px"><button class="on" data-at="manual">Nhập tay</button><button data-at="scan"><span style="display:inline-grid;width:16px">${icon("sparkle")}</span> Quét AI</button></div>
 
-    <div class="card">
-      <h2>Hoặc nhập tay</h2>
+    <div class="card" id="secManual">
+      <h2>Nhập tay</h2>
       <label for="addDates">Ngày thi <span class="small">(cách nhau bằng dấu phẩy hoặc xuống dòng; có thể ghi khoảng)</span></label>
       <textarea class="field" id="addDates" rows="3" placeholder="24/07/2026&#10;27/07/2026-31/07/2026"></textarea>
       <label class="check"><input type="checkbox" id="addSkipSun" checked> Bỏ Chủ nhật</label>
@@ -132,11 +125,33 @@ export function addHtml() {
       <input class="field" id="addMon" type="text">
       <div class="err" id="addErr" role="alert"></div>
       <div id="addMsg" class="okmsg"></div>
-      <div class="two"><button type="button" id="btnAddPrev">Xem trước</button><button type="button" class="primary" id="btnAddGo">Thêm vào đợt</button></div>
+      <div class="two"><button type="button" id="btnAddPrev">Xem trước</button><button type="button" class="primary" id="btnAddGo">Thêm ca</button></div>
     </div>
-  </div>
-  <h2 class="sec">Ca đã thêm của ${esc(scopeLabel())}</h2>
-  <div id="addList"></div>`;
+
+    <div class="card scanbox" id="secScan" hidden>
+      <h2><span class="ic-inline">${icon("sparkle")}</span> Quét lịch thi từ ảnh (AI)</h2>
+      <p class="small">Chụp bảng lịch thi hoặc chọn ảnh có sẵn (kể cả ảnh chụp màn hình). AI điền sẵn ngày, ca, khoá, ngành, môn; <b>bạn kiểm tra và sửa</b> trước khi thêm. AI có thể đọc sai nên không có gì được lưu cho tới khi bạn bấm Thêm.</p>
+      <div class="scanpick">
+        <label class="filebtn" for="scanCam">${icon("camera")} Chụp bằng camera</label>
+        <span class="or">hoặc</span>
+        <label class="filebtn" for="scanFile">${icon("image")} Chọn ảnh từ máy</label>
+      </div>
+      <input type="file" id="scanCam" accept="image/*" capture="environment" hidden>
+      <input type="file" id="scanFile" accept="image/*" hidden>
+      <div class="err" id="scanErr" role="alert"></div>
+      <div class="okmsg" id="scanMsg" role="status"></div>
+      <div id="scanPreview"></div>
+    </div>
+  </div>`;
+}
+
+/** Trang "Danh sách ca thi": ca của tổ mình trong một đợt, sửa số lượng hoặc xoá. */
+export function slotsHtml() {
+  const dots = [...S.dots].sort((a, b) => (b.order || 0) - (a.order || 0));
+  if (!dots.length) return `<div class="card center muted">Chưa có đợt thi nào.</div>`;
+  return `<div id="slotsPage"><div class="toolbar"><label for="slotDot" style="margin:0">Đợt thi</label>
+    <select class="sel" id="slotDot">${dots.map((d) => `<option value="${esc(d.id)}">${esc(d.name)} (${esc(STATUS_LABEL[statusOf(d)])})</option>`).join("")}</select></div>
+    <div id="addList"></div></div>`;
 }
 
 const readNeed = () => { const n = {}; manageTos().forEach((t) => (n[t] = Number($("addNeed" + t).value || 0))); return n; };
@@ -339,7 +354,8 @@ async function applyScan() {
 /** Các thay đổi (change) trong trang; trả true nếu là của tổ trưởng. */
 export function manageChange(e) {
   const t = e.target;
-  if (t.id === "addDot") { refreshAddList(); return true; }
+  if (t.id === "slotDot") { refreshAddList(); return true; }
+  if (t.dataset && t.dataset.sel === "gvf") { S.gvFilter = t.value; S.render(); return true; }
   if (t.id === "scanCam" || t.id === "scanFile") { const f = t.files && t.files[0]; t.value = ""; if (f) runScan(f); return true; }
   if (t.dataset && t.dataset.scan !== undefined) { editScan(t); return true; }
   return false;
@@ -349,7 +365,7 @@ export function manageChange(e) {
 export function refreshAddList() {
   const box = $("addList"); if (!box) return;
   if (document.activeElement && box.contains(document.activeElement)) return;
-  const dotId = $("addDot")?.value, tos = manageTos();
+  const dotId = $("slotDot")?.value, tos = manageTos();
   const slots = (S.slotsBy[dotId] || []).filter((s) => tos.some((t) => needOf(s, t) > 0))
     .sort((a, b) => a.date.localeCompare(b.date) || a.ca - b.ca || a.khoa - b.khoa || a.nganh.localeCompare(b.nganh));
   const editable = canEditCa(S.dots.find((d) => d.id === dotId));
@@ -393,6 +409,12 @@ async function delRow(id) {
 /** Gọi từ app.js cho mọi cú bấm trong trang; trả true nếu là thao tác của tổ trưởng. */
 export function manageClick(e) {
   let el;
+  if ((el = e.target.closest("[data-at]"))) {                      // chuyển tab Nhập tay / Quét AI (không vẽ lại trang để khỏi mất dữ liệu đang nhập)
+    const scan = el.dataset.at === "scan";
+    $("secManual").hidden = scan; $("secScan").hidden = !scan;
+    el.parentNode.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === el));
+    return true;
+  }
   if ((el = e.target.closest("[data-gv]"))) { S.openGv = S.openGv === el.dataset.gv ? null : el.dataset.gv; S.render(); return true; }
   if ((el = e.target.closest("[data-gf]"))) { S.gvFilter = el.dataset.gf; S.render(); return true; }
   if (e.target.closest("#btnCsv")) { downloadCsv(); return true; }

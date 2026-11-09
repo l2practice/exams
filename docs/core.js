@@ -22,10 +22,10 @@ export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&a
 export const S = {
   user: null, me: null, cfg: null,
   dots: [], slotsBy: {}, regsBy: {}, roster: [], teachersAll: [], myYear: [],
-  regView: "list",                              // trang Đăng ký: "list" danh sách + xem trước ngày | "table" bảng giống file mẫu
+  regView: "list",                              // trang Đăng ký: "list" danh sách | "matrix" bảng theo đợt | "grid" bảng giảng viên
   pick: null,                                   // ca đang chọn để xem trước
   route: "me:overview",                        // trang đang mở (mục trên thanh bên trái)
-  fKhoa: "all", fNganh: "all", gvFilter: "all", openGv: null,
+  fDot: "all", fKhoa: "all", fNganh: "all", gvFilter: "all", openGv: null,
   unsub: [], unsubDots: {},
   render: () => {},                            // app.js gán hàm vẽ lại
 };
