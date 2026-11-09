@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đăng ký gác thi</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>Đăng ký gác thi</h1>
+    <div class="sub" id="termLabel">Khoa Ngoại ngữ · Trường ĐH Đồng Nai</div>
+  </div>
+  <div id="userBox" hidden>
+    <button class="ghost" id="btnSet">Cài đặt</button>
+    <button class="ghost" id="btnOut">Đăng xuất</button>
+  </div>
+</header>
+
+<main>
+  <section id="login" class="card" hidden>
+    <form id="loginForm" autocomplete="on">
+      <label for="email">Email</label>
+      <input class="field" id="email" name="email" type="email" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+      <label for="pw">Mật khẩu</label>
+      <input class="field" id="pw" name="password" type="password" autocomplete="current-password" required>
+      <label class="check"><input type="checkbox" id="showPw"> Hiện mật khẩu</label>
+      <div class="err" id="loginErr" role="alert"></div>
+      <button class="primary wide" type="submit">Đăng nhập</button>
+      <p class="small center-t">Lần đầu đăng nhập, dùng mật khẩu mặc định do khoa cấp, sau đó vào <b>Cài đặt</b> để đổi.</p>
+      <p class="center-t"><button type="button" class="link" id="btnForgot">Quên mật khẩu?</button></p>
+    </form>
+  </section>
+
+  <section id="denied" class="card center" hidden>
+    <p><b id="deniedEmail"></b><br>không có trong danh sách giảng viên.</p>
+    <p>Hãy đăng nhập bằng email khác, hoặc liên hệ thư ký khoa để được thêm.</p>
+    <button id="btnOut2">Đăng xuất</button>
+  </section>
+
+  <section id="app" hidden>
+    <div id="pwBanner" class="banner" hidden>
+      Bạn đang dùng mật khẩu mặc định. Nên đổi mật khẩu để người khác không đăng ký thay bạn.
+      <button class="primary" id="btnPwNow">Đổi mật khẩu ngay</button>
+    </div>
+
+    <section id="settings" class="card" hidden>
+      <h2>Cài đặt – đổi mật khẩu</h2>
+      <form id="pwForm" autocomplete="off">
+        <label for="curPw">Mật khẩu hiện tại</label>
+        <input class="field" id="curPw" type="password" autocomplete="current-password" required>
+        <label for="newPw">Mật khẩu mới (từ 6 ký tự)</label>
+        <input class="field" id="newPw" type="password" autocomplete="new-password" minlength="6" required>
+        <label for="newPw2">Nhập lại mật khẩu mới</label>
+        <input class="field" id="newPw2" type="password" autocomplete="new-password" minlength="6" required>
+        <div class="err" id="pwErr" role="alert"></div>
+        <div class="two">
+          <button class="primary" type="submit">Lưu mật khẩu mới</button>
+          <button type="button" id="btnSetClose">Đóng</button>
+        </div>
+      </form>
+    </section>
+
+    <div class="card" id="progress"></div>
+    
+    <div class="tabs">
+      <button class="on" data-view="all">Tất cả ca thi</button>
+      <button data-view="mine">Ca của tôi</button>
+    </div>
+
+    <div class="filters">
+      <div class="fl">Lọc theo khoá</div>
+      <div id="fKhoa" class="chips"></div>
+      <div class="fl">Lọc theo ngành</div>
+      <div id="fNganh" class="chips"></div>
+    </div>
+
+    <div id="list"></div>
+  </section>
+
+  <div id="loading" class="center muted">Đang tải…</div>
+</main>
+<div id="toast" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
