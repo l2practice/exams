@@ -69,6 +69,7 @@ function setupSheets() {
     gv.getRange(1, 1, 1, 4).setValues([['Email', 'Họ tên', 'Tổ (1=SPA, 2=NNA, 3=Cơ bản)', 'Số ca đã gác trước khi dùng app (cộng dồn trong năm học)']]).setFontWeight('bold');
     gv.setFrozenRows(1);
   }
+  gv.getRange('E1').setValue('Vai trò quản lý: x = toàn khoa, tt = tổ trưởng (xem tổ mình)').setFontWeight('bold');
   gv.getRange('C2:C500').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['1', '2', '3'], true).build());
   gv.getRange('D2:D500').setDataValidation(SpreadsheetApp.newDataValidation().requireNumberGreaterThanOrEqualTo(0).build());
 
@@ -415,9 +416,9 @@ function readTeachers() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SH.GV);
   const last = sh.getLastRow();
   if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, 4).getValues()
+  return sh.getRange(2, 1, last - 1, 5).getValues()
     .filter((r) => String(r[0]).trim())
-    .map((r) => ({ email: String(r[0]).trim().toLowerCase(), name: String(r[1]).trim(), to: Number(r[2]), prior: Number(r[3] || 0) }));
+    .map((r) => ({ email: String(r[0]).trim().toLowerCase(), name: String(r[1]).trim(), to: Number(r[2]), prior: Number(r[3] || 0), admin: /^(x|admin|true|1)$/i.test(String(r[4]).trim()), lead: /^(tt|tổ trưởng|to truong)$/i.test(String(r[4]).trim()) }));
 }
 
 // ---------------------------------------------------------------- Tài khoản đăng nhập (email + mật khẩu)
@@ -481,7 +482,7 @@ function syncUp(ma) {
   const keep = new Set(slots.map((s) => s.id));
   fsList('slots').filter((d) => d.dotId === ma && d.active !== false && !keep.has(d._id))
     .forEach((d) => writes.push({ path: 'slots/' + d._id, data: { active: false } }));
-  teachers.forEach((t) => writes.push({ path: 'teachers/' + t.email, data: { name: t.name, to: t.to, prior: t.prior } }));
+  teachers.forEach((t) => writes.push({ path: 'teachers/' + t.email, data: { name: t.name, to: t.to, prior: t.prior, admin: t.admin, lead: t.lead } }));
   // Danh sách công khai cho GV (để vẽ các hàng của bảng): chỉ tên, tổ, thứ tự; số ca cũ (prior) giữ riêng trong teachers
   teachers.forEach((t, i) => writes.push({ path: 'roster/' + t.email, data: { name: t.name, to: t.to, order: i + 1 } }));
   const far = new Date(Date.now() + 365 * 86400000);

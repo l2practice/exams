@@ -14,11 +14,14 @@ service cloud.firestore {
       let d = get(/databases/$(db)/documents/dots/$(dotId)).data;
       return d.open == true && request.time < d.deadline;
     }
+    // Cột E trong tab GiaoVien: x => admin (toàn khoa); tt => lead (tổ trưởng, chỉ xem GV cùng tổ)
+    function isAdmin() { return isTeacher() && teacher().get('admin', false) == true; }
+    function isLead() { return isTeacher() && teacher().get('lead', false) == true; }
     function slotOf(slotId) { return get(/databases/$(db)/documents/slots/$(slotId)).data; }
 
     // Dữ liệu do Apps Script ghi (quyền chủ project) – GV chỉ đọc
     match /teachers/{e} {
-      allow read: if signedIn() && e == me();
+      allow read: if signedIn() && (e == me() || isAdmin() || (isLead() && resource.data.to == teacher().to));
       allow write: if false;
     }
     // Tên + tổ của mọi GV (để vẽ bảng); KHÔNG chứa số ca đã gác (nằm ở teachers, chỉ chính chủ đọc được)

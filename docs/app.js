@@ -16,7 +16,7 @@ const DEFAULT_CA = { 1: { start: "07:30", arrive: "07:15" }, 2: { start: "09:00"
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-const S = { usedDefault: false, settings: false, user: null, me: null, cfg: null, dots: [], slotsBy: {}, regsBy: {}, roster: [], myYear: [], fKhoa: "all", fNganh: "all", view: "all", unsub: [], unsubDots: {} };
+const S = { usedDefault: false, settings: false, user: null, me: null, cfg: null, dots: [], slotsBy: {}, regsBy: {}, roster: [], teachersAll: [], adminFilter: "all", myYear: [], fKhoa: "all", fNganh: "all", view: "all", unsub: [], unsubDots: {} };
 
 const caInfo = (ca) => (S.cfg?.caTimes?.[ca]) || DEFAULT_CA[ca] || { start: "", arrive: "" };
 
@@ -44,6 +44,7 @@ const authMsg = (code) => ({
   "auth/too-many-requests": "Nhập sai nhiều lần. Hãy chờ vài phút rồi thử lại.",
   "auth/network-request-failed": "Mất kết nối mạng. Hãy thử lại.",
   "auth/weak-password": "Mật khẩu mới quá ngắn (tối thiểu 6 ký tự).",
+  "auth/operation-not-allowed": "Đăng nhập bằng email/mật khẩu chưa được bật trong Firebase. Hãy báo quản trị viên (Authentication → Sign-in method → Email/Password).",
   "auth/requires-recent-login": "Hãy đăng xuất, đăng nhập lại rồi đổi mật khẩu.",
 }[code] || "Có lỗi xảy ra, hãy thử lại. (" + code + ")");
 
@@ -92,7 +93,7 @@ $("pwForm").onsubmit = async (e) => {
 onAuthStateChanged(auth, async (u) => {
   S.unsub.forEach((f) => f()); S.unsub = [];
   Object.values(S.unsubDots).forEach((f) => f()); S.unsubDots = {};
-  S.user = u; S.me = null; S.dots = []; S.slotsBy = {}; S.regsBy = {}; S.roster = []; S.myYear = [];
+  S.user = u; S.me = null; S.dots = []; S.slotsBy = {}; S.regsBy = {}; S.roster = []; S.myYear = []; S.teachersAll = [];
   if (!u) return show("login");
   show("loading");
   const email = u.email.toLowerCase();
@@ -108,6 +109,11 @@ onAuthStateChanged(auth, async (u) => {
     S.roster = qs.docs.map((d) => ({ email: d.id, ...d.data() })).sort((a, b) => (a.order || 0) - (b.order || 0));
     render();
   }));
+  // Quản trị (x) thấy mọi GV; tổ trưởng (tt) chỉ thấy GV cùng tổ. Luật Firestore cũng ép đúng như vậy.
+  if (S.me.admin || S.me.lead) {
+    const q = S.me.admin ? collection(db, "teachers") : query(collection(db, "teachers"), where("to", "==", S.me.to));
+    S.unsub.push(onSnapshot(q, (qs) => { S.teachersAll = qs.docs.map((d) => ({ email: d.id, ...d.data() })); render(); }));
+  }
   // Các đợt thi của năm học hiện tại: mỗi đợt một bảng, mỗi đợt có listener riêng
   S.unsub.push(onSnapshot(collection(db, "dots"), (qs) => {
     S.dots = qs.docs.map((d) => ({ id: d.id, ...d.data() })).filter((d) => d.namHoc === S.cfg.namHoc);
@@ -281,6 +287,10 @@ function render() {
       <span class="pill ${total >= min ? "ok" : "warn"}">${total >= min ? "Đã đủ số ca" : `Còn thiếu ${min - total} ca`}</span></div>
     <div class="bar ${total >= min ? "done" : ""}"><i style="width:${pct}%"></i></div>
     <div class="muted">Năm học ${esc(S.cfg.namHoc || "")}: đã gác trước đó ${prior} ca · đã đăng ký trên app ${now} ca</div>`;
+  const canManage = !!(S.me.admin || S.me.lead);
+  $("tabAdmin").hidden = !canManage;
+  if (S.view === "admin" && !canManage) S.view = "all";
+  $("filters").hidden = S.view === "admin";
   $("pwBanner").hidden = !S.usedDefault || S.settings;
   $("settings").hidden = !S.settings;
   $("termLabel").textContent = "Khoa Ngoại ngữ · Năm học " + (S.cfg.namHoc || "");
@@ -296,6 +306,7 @@ function render() {
     b.onclick = () => { S.view = b.dataset.view; render(); };
   });
 
+  if (S.view === "admin") { $("list").innerHTML = overviewHtml(dots); return; }
   if (!dots.length) { $("list").innerHTML = `<div class="card center muted">Chưa có đợt thi nào.</div>`; return; }
   // giữ vị trí cuộn ngang của từng bảng khi dữ liệu cập nhật realtime
   const scroll = [...$("list").querySelectorAll(".tbl-wrap")].map((w) => [w.scrollLeft, w.scrollTop]);
@@ -306,9 +317,83 @@ function render() {
 }
 
 $("list").onclick = (e) => {
+  const f = e.target.closest("[data-af]");
+  if (f) { S.adminFilter = f.dataset.af; render(); return; }
+  if (e.target.closest("#btnCsv")) { downloadCsv(); return; }
   const b = e.target.closest("[data-reg],[data-cancel]");
   if (!b) return;
   const s = findSlot(b.dataset.reg || b.dataset.cancel);
   if (!s) return;
   if (b.dataset.reg) register(s); else cancel(s);
 };
+
+// ---- Tổng quan cho quản trị / tổ trưởng ----
+/** Dữ liệu tổng quan trong phạm vi của người xem: toàn khoa (admin) hoặc riêng tổ của tổ trưởng. */
+function overviewData(dots) {
+  const scope = S.me.admin ? null : S.me.to;               // null = toàn khoa
+  const tos = scope ? [scope] : [1, 2, 3];
+  const min = S.cfg.minCa || 20;
+  const byTo = Object.fromEntries(tos.map((t) => [t, { need: 0, taken: 0 }]));
+  const perUser = {};
+  const dotRows = [], missing = [];
+  for (const d of dots) {
+    const slots = S.slotsBy[d.id] || [], regs = S.regsBy[d.id] || [];
+    const cnt = {};
+    for (const r of regs) { (cnt[r.slotId] ||= { 1: 0, 2: 0, 3: 0 })[r.to]++; perUser[r.email] = (perUser[r.email] || 0) + 1; }
+    let need = 0, taken = 0, full = 0;
+    for (const s of slots) {
+      let ok = true; const miss = [];
+      for (const t of tos) {
+        const n = needOf(s, t), c = cnt[s.id]?.[t] || 0;
+        need += n; taken += Math.min(c, n); byTo[t].need += n; byTo[t].taken += Math.min(c, n);
+        if (c < n) { ok = false; miss.push([t, n - c]); }
+      }
+      if (ok) full++; else missing.push({ d, s, miss });
+    }
+    dotRows.push({ d, slots: slots.length, need, taken, full });
+  }
+  const people = S.teachersAll.filter((t) => !scope || t.to === scope).map((t) => {
+    const reg = perUser[t.email] || 0, total = Number(t.prior || 0) + reg;
+    return { email: t.email, name: t.name, to: t.to, prior: Number(t.prior || 0), reg, total, short: Math.max(0, min - total) };
+  }).sort((a, b) => b.short - a.short || a.name.localeCompare(b.name, "vi"));
+  missing.sort((a, b) => a.s.date.localeCompare(b.s.date) || a.s.ca - b.s.ca);
+  return { scope, tos, min, byTo, dotRows, missing, people };
+}
+
+function overviewHtml(dots) {
+  const o = overviewData(dots);
+  const pct = (a, b) => (b ? Math.round((a * 100) / b) : 0);
+  const scopeLabel = o.scope ? `Tổ ${TO_LABEL[o.scope]}` : "Toàn khoa";
+  const cards = o.dotRows.map(({ d, slots, need, taken, full }) => `
+    <div class="card kpi"><div class="dot-head"><h2>${esc(d.name)}</h2><span class="pill ${isOpen(d) ? "ok" : "bad"}">${isOpen(d) ? "Đang mở" : "Đã đóng"}</span></div>
+      <div class="big">${taken} / ${need} <span class="small">chỗ đã có người (${pct(taken, need)}%)</span></div>
+      <div class="bar ${taken >= need && need ? "done" : ""}"><i style="width:${pct(taken, need)}%"></i></div>
+      <div class="small">${slots} ca · ${full} ca đã đủ người · ${slots - full} ca còn thiếu</div></div>`).join("");
+  const toRows = o.tos.map((t) => { const x = o.byTo[t]; return `<tr><td>${esc(TO_LABEL[t])}</td><td>${x.need}</td><td>${x.taken}</td><td class="${x.need - x.taken > 0 ? "bad" : "okc"}">${Math.max(0, x.need - x.taken)}</td></tr>`; }).join("");
+  const missRows = o.missing.map(({ d, s, miss }) => `<tr><td>${esc(d.name)}</td><td>${dowOf(s.date)} ${dmOf(s.date)}</td><td>Ca ${s.ca} (${caInfo(s.ca).start})</td><td>K${esc(s.khoa)} ${esc(s.nganh)}</td><td>${miss.map(([t, n]) => `${esc(TO_SHORT[t])} thiếu ${n}`).join(", ")}</td></tr>`).join("");
+  const shown = o.people.filter((p) => S.adminFilter === "all" || p.short > 0);
+  const pplRows = shown.map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(TO_SHORT[p.to] || "")}</td><td>${p.prior}</td><td>${p.reg}</td><td><b>${p.total}</b> / ${o.min}</td><td class="${p.short ? "bad" : "okc"}">${p.short ? "Thiếu " + p.short : "Đủ"}</td></tr>`).join("");
+  const nShort = o.people.filter((p) => p.short > 0).length;
+  return `<div class="card"><b>Phạm vi xem:</b> ${esc(scopeLabel)}${S.me.admin ? "" : " (tổ trưởng chỉ xem tổ của mình)"}</div>
+    <div class="kpis">${cards || '<div class="card muted">Chưa có đợt thi nào.</div>'}</div>
+    <h2 class="sec">Chỉ tiêu theo tổ</h2>
+    <div class="tbl-wrap"><table class="list"><thead><tr><th>Tổ</th><th>Cần</th><th>Đã đăng ký</th><th>Còn thiếu</th></tr></thead><tbody>${toRows}</tbody></table></div>
+    <h2 class="sec">Ca còn thiếu người <span class="small">(${o.missing.length} ca)</span></h2>
+    <div class="tbl-wrap"><table class="list"><thead><tr><th>Đợt</th><th>Ngày</th><th>Ca</th><th>Khoá - Ngành</th><th>Còn thiếu</th></tr></thead><tbody>${missRows || '<tr><td colspan="5" class="okc">Mọi ca đều đủ người.</td></tr>'}</tbody></table></div>
+    <h2 class="sec">Giảng viên (mức tối thiểu ${o.min} ca/năm học)</h2>
+    <div class="chips"><button class="chip ${S.adminFilter === "all" ? "on" : ""}" data-af="all">Tất cả (${o.people.length})</button>
+      <button class="chip ${S.adminFilter === "short" ? "on" : ""}" data-af="short">Chưa đủ ${o.min} ca (${nShort})</button>
+      <button class="chip" id="btnCsv">Tải CSV</button></div>
+    <div class="tbl-wrap"><table class="list"><thead><tr><th>Họ tên</th><th>Tổ</th><th>Trước đó</th><th>Đăng ký</th><th>Tổng</th><th>Tình trạng</th></tr></thead><tbody>${pplRows || '<tr><td colspan="6" class="muted">Không có GV nào.</td></tr>'}</tbody></table></div>`;
+}
+
+function downloadCsv() {
+  const o = overviewData([...S.dots]);
+  const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lines = [["Họ tên", "Email", "Tổ", "Số ca trước đó", "Số ca đăng ký", "Tổng", "Còn thiếu"].map(q).join(",")]
+    .concat(o.people.map((p) => [p.name, p.email, TO_LABEL[p.to] || p.to, p.prior, p.reg, p.total, p.short].map(q).join(",")));
+  const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `tong-quan-gac-thi-${S.cfg.namHoc || ""}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+}

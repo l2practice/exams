@@ -33,7 +33,7 @@ button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .banner{padding:10px 14px;border-radius:12px;margin-bottom:12px;background:var(--warnbg);color:var(--warn);font-weight:600}
 
 /* Tab Tất cả / Của tôi */
-.tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px}
 .tabs button{font-weight:650}
 .tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 
@@ -128,3 +128,14 @@ td.na{background:var(--bg)}
   table.sheet th,table.sheet td{min-width:60px}
   .tbl-wrap{max-height:72vh}
 }
+
+/* Tổng quan quản trị */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:12px 0}
+.kpi .big{font-size:1.4rem}
+h2.sec{font-size:1.1rem;margin:22px 0 8px}
+table.list{width:100%;border-collapse:collapse;font-size:.9rem}
+table.list th,table.list td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+table.list th{background:var(--bg);position:sticky;top:0}
+table.list td.bad{color:var(--bad);font-weight:700} table.list td.okc{color:var(--ok);font-weight:700}
+
+[hidden]{display:none !important}   /* thuộc tính hidden luôn thắng display của lớp CSS */

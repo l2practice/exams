@@ -39,6 +39,12 @@ Các menu làm việc trên đợt của tab đang mở.
 ## Giao diện đăng ký (bảng giống tab xuất mẫu)
 Mỗi đợt thi của năm học là **một bảng**: cột = ca (hàng Ngày gộp cột / Ca + giờ bắt đầu / Khoá-Ngành / "Còn n" chỗ cho tổ của GV), hàng = GV (hàng của chính GV nằm đầu, có nút **+** để đăng ký và **✔** để huỷ; hàng đồng nghiệp hiện chữ **X**), cột **Cộng**, chân bảng "Tổng đăng ký" và "SL được giao". Cột tên và các hàng tiêu đề dính khi cuộn. Danh sách hàng lấy từ collection `roster` (tên + tổ, ghi bởi Apps Script khi đồng bộ).
 
+## Tab Tổng quan (quản trị / tổ trưởng)
+Trong tab `GiaoVien`, cột **E** (Vai trò quản lý):
+- `x` = quản trị toàn khoa: thấy cả 3 tổ.
+- `tt` = tổ trưởng: chỉ thấy GV, ca thiếu người và chỉ tiêu của **tổ mình** (Firestore rules cũng ép như vậy).
+Người có vai trò này thấy thêm tab **Tổng quan**: tiến độ từng đợt, chỉ tiêu theo tổ, danh sách ca còn thiếu người, danh sách GV chưa đủ 20 ca và nút **Tải CSV**. Sau khi sửa cột E, chạy lại **Đồng bộ lên Firebase**.
+
 ## Đăng nhập
 GV đăng nhập bằng **email + mật khẩu**. Mật khẩu mặc định là `chuyen1` (đổi ở `matKhauMacDinh` trong `CauHinh`; trên web đổi trong hằng số `DEFAULT_PW` ở `docs/app.js` cho khớp). Ô email nhớ email lần trước; GV tự đổi mật khẩu ở **Cài đặt**; có nút "Quên mật khẩu?" gửi thư đặt lại.
 Tài khoản được tạo tự động khi **Đồng bộ lên Firebase** (hoặc menu *Tạo tài khoản đăng nhập cho GV*), với email đã xác thực, chỉ cho email có trong tab `GiaoVien`. Firestore rules yêu cầu email đã xác thực, nên người tự đăng ký bằng email lạ không vào được dữ liệu.
