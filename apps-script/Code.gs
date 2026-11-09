@@ -65,6 +65,11 @@ function setupSheets() {
     cfg.getRange(1, 1, 1, 3).setFontWeight('bold');
   }
 
+  const have = new Set(cfg.getRange(1, 1, Math.max(cfg.getLastRow(), 1), 1).getValues().map((r) => String(r[0]).trim()));
+  [['geminiModel', 'gemini-2.5-flash', 'Model Gemini dùng để quét lịch thi từ ảnh (khoá API dán ở Script Properties: GEMINI_API_KEY)'],
+   ['FIREBASE_API_KEY', 'AIzaSyBt_oW_FZrV06TbBOrGH--4x4gG2oVxkJQ', 'Khoá Web của Firebase (công khai) để kiểm tra người gọi chức năng quét']]
+    .filter((r) => !have.has(r[0])).forEach((r) => cfg.appendRow(r));
+
   const gv = get(SH.GV);
   gv.getRange(1, 1, 1, 5).setValues([['Email', 'Họ tên', 'Tổ (1=SPA, 2=NNA, 3=Cơ bản)', 'Số ca đã gác trước khi dùng app (cộng dồn trong năm học)', 'Vai trò (tt1, tt2, tt3 = tổ trưởng; x = quản trị toàn khoa; trống = tổ viên)']]).setFontWeight('bold');
   gv.setFrozenRows(1);
@@ -91,6 +96,8 @@ function getCfg() {
   o.toiThieu = Number(o.toiThieu || 20);
   o.nhacTruocGio = Number(o.nhacTruocGio || 18);
   o.namHoc = String(o.namHoc);
+  o.geminiModel = String(o.geminiModel || 'gemini-2.5-flash');          // đổi trong CauHinh nếu Google đã ngừng model này
+  o.FIREBASE_API_KEY = String(o.FIREBASE_API_KEY || 'AIzaSyBt_oW_FZrV06TbBOrGH--4x4gG2oVxkJQ'); // khoá Web của Firebase (công khai), dùng để kiểm tra phiên đăng nhập
   o.matKhauMacDinh = String(o.matKhauMacDinh || 'chuyen1');
   o.ca = {};
   [1, 2, 3, 4].forEach((c) => (o.ca[c] = { start: hhmm(o[`ca${c}_batDau`]) || CA_DEFAULT[c][0], arrive: hhmm(o[`ca${c}_coMat`]) || CA_DEFAULT[c][1] }));
@@ -281,6 +288,7 @@ function doPost(e) {
   try {
     const req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     if (req.action === 'reset') return out(resetPassword(String(req.email || '').trim().toLowerCase()));
+    if (req.action === 'scan') return out(scanSchedule(req));
     return out({ ok: false, error: 'unknown action' });
   } catch (err) { return out({ ok: false, error: 'bad request' }); }
 }
@@ -619,4 +627,100 @@ function menuTestMail() {
   const mail = buildReminder(cfg, 'Nguyễn Văn A (thư thử)', items, { total: 14, min: cfg.toiThieu }, { name: 'Nguyễn Văn B - Tổ trưởng Chuyên 1', replyTo: to });
   MailApp.sendEmail({ to, subject: '[THỬ] ' + mail.subject, body: mail.text, htmlBody: mail.html, name: 'Nguyễn Văn B - Tổ trưởng Chuyên 1', replyTo: to });
   SpreadsheetApp.getUi().alert('Đã gửi mail thử tới ' + to);
+}
+
+// ---------------------------------------------------------------- Quét lịch thi từ ảnh (Gemini)
+/**
+ * Web gửi POST {action:'scan', idToken, image(base64), mime, namHoc}.
+ * Chỉ tổ trưởng / quản trị (cột E trong GiaoVien) dùng được; khoá Gemini nằm ở Script Properties (GEMINI_API_KEY), không lộ ra web.
+ * Trả {ok, rows:[{date, ca, khoa, nganh, mon, note, time}]} để web hiện bản xem trước cho tổ trưởng sửa. Không tự lưu gì.
+ */
+const SCAN_MAX_PER_DAY = 40;
+const SCAN_MAX_B64 = 7 * 1024 * 1024;
+
+/** Kiểm tra idToken của Firebase, trả email (chữ thường) hoặc null. */
+function verifyIdToken(idToken, cfg) {
+  if (!idToken) return null;
+  const res = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + encodeURIComponent(cfg.FIREBASE_API_KEY), {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ idToken }),
+  });
+  if (res.getResponseCode() >= 300) return null;
+  const u = (JSON.parse(res.getContentText() || '{}').users || [])[0];
+  return u && u.emailVerified && u.email ? String(u.email).toLowerCase() : null;
+}
+
+function buildScanPrompt(cfg, namHoc) {
+  const times = [1, 2, 3, 4].map((c) => `ca ${c} = ${cfg.ca[c].start}`).join(', ');
+  return `Đây là ảnh (chụp hoặc chụp màn hình) lịch thi của một trường đại học ở Việt Nam. Hãy trích xuất MỌI ca thi thành danh sách.
+Với mỗi ca thi trả về các trường:
+- date: ngày thi dạng yyyy-mm-dd. Nếu ảnh chỉ ghi ngày/tháng, dùng năm thuộc năm học ${namHoc || ''}. Nếu không chắc, để chuỗi rỗng.
+- time: giờ bắt đầu thi dạng HH:mm (24 giờ) nếu ảnh có ghi, nếu không để chuỗi rỗng. (Các ca của khoa: ${times}.)
+- khoa: số khoá (ví dụ lớp "DHSPA13A" hoặc "K13" là khoá 13). Nếu không chắc, để null.
+- nganh: "SPA" nếu là Sư phạm Tiếng Anh / Sư phạm Anh, "NNA" nếu là Ngôn ngữ Anh; nếu không chắc để chuỗi rỗng.
+- mon: tên môn thi (giữ nguyên chữ trong ảnh).
+- note: ghi chú khác (phòng thi, hình thức thi...) nếu có, nếu không để chuỗi rỗng.
+Quy tắc: tuyệt đối không bịa. Nếu một ô không đọc được thì để trống thay vì đoán. Mỗi dòng của bảng là một phần tử; nếu một ô ghi nhiều ngày hoặc nhiều lớp thì tách thành nhiều phần tử. Chỉ trả JSON đúng định dạng yêu cầu.`;
+}
+
+/** Giờ thi → số ca (1-4) gần nhất trong ±45 phút so với giờ bắt đầu hoặc giờ có mặt; không khớp thì trả null. */
+function timeToCa(time, cfg) {
+  const m = String(time || '').trim().match(/^(\d{1,2})[:hH.](\d{2})$/);
+  if (!m) return null;
+  const t = Number(m[1]) * 60 + Number(m[2]);
+  let best = null, bestD = 46;
+  [1, 2, 3, 4].forEach((c) => [cfg.ca[c].start, cfg.ca[c].arrive].forEach((x) => {
+    const mm = String(x).match(/^(\d{1,2}):(\d{2})$/); if (!mm) return;
+    const d = Math.abs(Number(mm[1]) * 60 + Number(mm[2]) - t);
+    if (d < bestD) { bestD = d; best = c; }
+  }));
+  return best;
+}
+
+/** Chuẩn hoá kết quả của AI thành các dòng web dùng được (ngày ISO, ca, khoá hợp lệ, ngành SPA/NNA). Hàm thuần, thử được ngoài Apps Script. */
+function normalizeScanRows(rows, cfg) {
+  const khoaOK = cfg.khoaHopLe.split(',').map((x) => Number(x.trim())).filter(Boolean);
+  return (rows || []).slice(0, 300).map((r) => {
+    let date = String(r.date || '').trim();
+    const dm = date.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+    if (dm) date = `${dm[3]}-${pad2(+dm[2])}-${pad2(+dm[1])}`;
+    const ym = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const okDate = !!ym && new Date(Date.UTC(+ym[1], +ym[2] - 1, +ym[3])).getUTCDate() === +ym[3];   // loại ngày không có thật (31/02…)
+    const ng = String(r.nganh || '').trim().toUpperCase();
+    const khoa = Number(r.khoa);
+    return { date: okDate ? date : '', time: String(r.time || '').trim(), ca: timeToCa(r.time, cfg),
+      khoa: khoaOK.includes(khoa) ? khoa : null, nganh: NGANH.includes(ng) ? ng : '', mon: String(r.mon || '').trim(), note: String(r.note || '').trim() };
+  });
+}
+
+function scanSchedule(req) {
+  const cfg = getCfg();
+  const email = verifyIdToken(req.idToken, cfg);
+  if (!email) return { ok: false, error: 'auth' };
+  const t = readTeachers().find((x) => x.email === email);
+  if (!t || !(t.admin || t.leadTo)) return { ok: false, error: 'forbidden' };
+  const key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!key) return { ok: false, error: 'no_key' };
+  const b64 = String(req.image || '');
+  if (!b64 || b64.length > SCAN_MAX_B64 || !/^image\/(jpeg|png|webp)$/.test(String(req.mime))) return { ok: false, error: 'bad_image' };
+
+  const props = PropertiesService.getScriptProperties();                       // hạn mức mỗi người mỗi ngày (tránh dùng quá tay)
+  const day = Utilities.formatDate(new Date(), TZ, 'yyyyMMdd'), qk = 'scan:' + email;
+  const [d0, c0] = String(props.getProperty(qk) || '').split(':');
+  const used = d0 === day ? Number(c0) : 0;
+  if (used >= SCAN_MAX_PER_DAY) return { ok: false, error: 'limit' };
+  props.setProperty(qk, day + ':' + (used + 1));
+
+  const body = {
+    contents: [{ parts: [{ text: buildScanPrompt(cfg, req.namHoc) }, { inline_data: { mime_type: req.mime, data: b64 } }] }],
+    generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', required: ['rows'], properties: { rows: { type: 'ARRAY', items: {
+      type: 'OBJECT', required: ['date'], properties: { date: { type: 'STRING' }, time: { type: 'STRING' }, khoa: { type: 'INTEGER' }, nganh: { type: 'STRING' }, mon: { type: 'STRING' }, note: { type: 'STRING' } } } } } } },
+  };
+  const res = UrlFetchApp.fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.geminiModel)}:generateContent`, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': key }, payload: JSON.stringify(body),
+  });
+  if (res.getResponseCode() >= 300) return { ok: false, error: 'gemini', detail: res.getContentText().slice(0, 300) };
+  try {
+    const text = JSON.parse(res.getContentText()).candidates[0].content.parts.map((p) => p.text || '').join('');
+    return { ok: true, rows: normalizeScanRows(JSON.parse(text).rows, cfg), model: cfg.geminiModel };
+  } catch (e) { return { ok: false, error: 'parse' }; }
 }

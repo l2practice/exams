@@ -3,6 +3,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
+import { icon } from "./icons.js";
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -21,6 +22,8 @@ export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&a
 export const S = {
   user: null, me: null, cfg: null,
   dots: [], slotsBy: {}, regsBy: {}, roster: [], teachersAll: [], myYear: [],
+  regView: "list",                              // trang Đăng ký: "list" danh sách + xem trước ngày | "table" bảng giống file mẫu
+  pick: null,                                   // ca đang chọn để xem trước
   route: "me:overview",                        // trang đang mở (mục trên thanh bên trái)
   fKhoa: "all", fNganh: "all", gvFilter: "all", openGv: null,
   unsub: [], unsubDots: {},
@@ -84,3 +87,29 @@ export function toast(msg) {
 
 export const chipsHtml = (items, cur, attr) =>
   items.map(([v, l]) => `<button class="chip ${String(v) === String(cur) ? "on" : ""}" data-${attr}="${esc(v)}">${esc(l)}</button>`).join("");
+
+/**
+ * Hộp thoại xác nhận (thay cho confirm() mặc định của trình duyệt): chữ lớn, nút to, hiện rõ từng thông tin.
+ * rows = [[nhãn, giá trị]]. Trả Promise<boolean>. Esc hoặc bấm nền = không đồng ý.
+ */
+export function ask({ title, rows = [], text = "", ok = "Đồng ý", cancel = "Không", danger = false, ic = "tasks" }) {
+  return new Promise((resolve) => {
+    const bg = document.createElement("div");
+    bg.className = "aw-od-bg";
+    bg.innerHTML = `<div class="aw-od" role="dialog" aria-modal="true" aria-labelledby="askT">
+      <div class="aw-od-ic ${danger ? "danger" : ""}">${icon(ic)}</div>
+      <h2 id="askT">${esc(title)}</h2>
+      ${text ? `<p class="aw-od-sub">${esc(text)}</p>` : ""}
+      ${rows.length ? `<dl class="aw-od-rows">${rows.filter((r) => r[1]).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : ""}
+      <div class="aw-od-foot"><button type="button" id="askNo">${esc(cancel)}</button><button type="button" id="askOk" class="${danger ? "danger" : "primary"}">${esc(ok)}</button></div>
+    </div>`;
+    document.body.appendChild(bg);
+    const done = (v) => { document.removeEventListener("keydown", onKey); bg.remove(); resolve(v); };
+    const onKey = (e) => { if (e.key === "Escape") done(false); };
+    document.addEventListener("keydown", onKey);
+    bg.onclick = (e) => { if (e.target === bg) done(false); };
+    bg.querySelector("#askNo").onclick = () => done(false);
+    bg.querySelector("#askOk").onclick = () => done(true);
+    bg.querySelector("#askOk").focus();
+  });
+}

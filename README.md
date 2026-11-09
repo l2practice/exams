@@ -67,6 +67,21 @@ Repo *Settings → Pages → Deploy from a branch → `main` → `/docs` → Sav
 5. **Gác thi → 2. Kéo đăng ký về Sheet + Xuất MẪU nộp** → so tab `XuatMau_<mã>` với file mẫu của trường → **3. Lưu file .xlsx**.
 6. **Gác thi → Gửi thử mail nhắc cho tôi** → nếu ổn: **Cài lịch gửi mail nhắc (mỗi giờ)**.
 
+## 3b. Quét lịch thi từ ảnh bằng AI (tổ trưởng: Quản lý → Thêm ca)
+1. Lấy khoá Gemini tại <https://aistudio.google.com/apikey> (Create API key). **Không dán khoá vào web hay GitHub.**
+2. Apps Script → **Project Settings → Script Properties → Add script property**: tên `GEMINI_API_KEY`, giá trị là khoá vừa tạo → Save.
+3. Sheet: **Gác thi → Tạo / cập nhật các tab cố định** (thêm 2 dòng `geminiModel` và `FIREBASE_API_KEY` vào `CauHinh`). Nếu Google đã ngừng model mặc định thì đổi `geminiModel` sang model Flash mới nhất.
+4. **Deploy lại Web App bản mới** (Deploy → Manage deployments → bút chì → New version) vì script có thêm chức năng.
+5. Dùng: **Quản lý → Thêm ca**: chọn đợt, nhập số GV cần của tổ → **Chụp bằng camera** (điện thoại mở camera sau) hoặc **Chọn ảnh** → chờ 10–30 giây → bảng xem trước: ô đỏ là chỗ AI chưa chắc, sửa hoặc bỏ tick → **Thêm N ca đã chọn**. AI không tự lưu gì.
+- Chỉ tổ trưởng/quản trị gọi được (script kiểm tra phiên đăng nhập và vai trò), tối đa 40 lần quét/người/ngày. Ảnh được thu nhỏ trên máy trước khi gửi.
+- Giờ thi AI đọc được đổi thành số ca theo bảng giờ trong `CauHinh` (lệch tối đa 45 phút).
+
+## 3c. Giao diện đăng ký của giảng viên
+Trang **Đăng ký** có hai kiểu xem (nhớ lựa chọn của từng người):
+- **Dạng danh sách** (mặc định): mỗi ca một dòng, gộp ca của **mọi đợt** theo ngày. Bấm một dòng thì khung **Xem trước cả ngày** ở trên hiện bảng ca × khoá-ngành của ngày đó (gộp các đợt), chi tiết ca, ai đã đăng ký và "Ca của bạn trong ngày này". Ca cùng giờ với ca đã đăng ký báo "Bạn đã có ca khác cùng giờ".
+- **Dạng bảng**: mỗi đợt một bảng giống file mẫu.
+Đăng ký/huỷ luôn có hộp thoại xác nhận chữ lớn.
+
 ## 4. Quy trình mỗi đợt thi
 1. Admin: **Tạo đợt thi mới** (trạng thái `SOAN`) → Đồng bộ.
 2. Tổ trưởng từng tổ: **Quản lý → Thêm ca thi mới** (cùng một ca thì các tổ tự gộp số của mình vào). Theo dõi ở danh sách "Ca đã thêm", sửa hoặc xoá được khi chưa có ai đăng ký.

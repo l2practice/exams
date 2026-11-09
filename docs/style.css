@@ -213,3 +213,70 @@ td.na{background:var(--aw-surface-2) !important}
 .aw-auth-title{font-size:1.75rem;font-weight:700;margin:16px 0 4px}
 .aw-auth-sub{color:var(--aw-ink-2);font-size:.95rem;margin:0}
 @media(max-width:480px){.aw-auth-card{padding:28px 20px;border-radius:24px}}
+
+/* ── hộp thoại xác nhận (giống aw-od của ArticuWrite) ── */
+.aw-od-bg{position:fixed;inset:0;background:rgba(30,33,66,.5);z-index:950;display:flex;align-items:center;justify-content:center;padding:16px}
+.aw-od{background:#fff;border-radius:28px;box-shadow:var(--aw-shadow-lg);width:100%;max-width:440px;padding:28px 26px 22px}
+.aw-od-ic{width:54px;height:54px;border-radius:50%;background:var(--aw-primary-lt);color:var(--aw-primary);display:grid;place-items:center;margin-bottom:14px}
+.aw-od-ic.danger{background:var(--aw-accent-lt);color:var(--aw-accent)}
+.aw-od-ic svg{width:27px;height:27px}
+.aw-od h2{font-size:1.35rem;margin:0 0 6px}
+.aw-od-sub{margin:0 0 12px;color:var(--aw-ink-2);font-size:.92rem}
+.aw-od-rows{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;margin:12px 0 4px;padding:14px 16px;background:var(--aw-surface-2);border-radius:var(--aw-r)}
+.aw-od-rows dt{color:var(--aw-ink-3);font-size:.85rem;align-self:center}
+.aw-od-rows dd{margin:0;font-weight:600;font-size:1rem}
+.aw-od-foot{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}
+.aw-od-foot button{min-height:52px;font-size:1.02rem}
+
+/* ── quét lịch thi bằng AI ── */
+.scanbox{background:linear-gradient(135deg,#fff 0%,var(--aw-primary-lt) 160%)}
+.ic-inline{display:inline-grid;place-items:center;vertical-align:middle;width:30px;height:30px;border-radius:10px;background:var(--aw-primary);color:#fff;margin-right:6px}
+.ic-inline svg{width:18px;height:18px}
+label.filebtn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;margin:0;padding:11px 16px;border-radius:var(--aw-r-pill);background:var(--aw-surface-2);color:var(--aw-ink);font-weight:600;font-size:.98rem;cursor:pointer;text-align:center;box-shadow:var(--aw-shadow-sm)}
+label.filebtn:hover{background:var(--aw-primary-lt);color:var(--aw-primary-hv)}
+label.filebtn.primary{background:var(--aw-primary);color:#fff}
+label.filebtn.primary:hover{background:var(--aw-primary-hv);color:#fff}
+label.filebtn svg{width:22px;height:22px}
+table.scan td{padding:6px 8px}
+table.scan td.bad{background:var(--aw-bad-bg)}
+table.scan tr.off td{opacity:.5}
+table.scan input[type=text],table.scan input[type=date],table.scan select{font-family:var(--aw-font);font-size:.92rem;min-height:42px;border:1.5px solid var(--aw-border);border-radius:10px;padding:6px 8px;background:#fff;color:var(--aw-ink);max-width:170px}
+table.scan input[type=checkbox]{width:22px;height:22px;accent-color:var(--aw-primary)}
+
+/* ── Đăng ký dạng danh sách + xem trước cả ngày ── */
+.viewtoggle{margin-bottom:10px}
+.dayhead{position:sticky;top:0;z-index:2;margin:18px -2px 8px;padding:8px 4px;font-weight:700;font-size:1.02rem;background:var(--aw-bg);border-bottom:2px solid var(--aw-border)}
+.crow{display:grid;grid-template-columns:74px 1fr auto auto;align-items:center;gap:6px 14px;background:var(--aw-surface);border-radius:var(--aw-r);box-shadow:var(--aw-shadow-sm);padding:12px 16px;margin-bottom:10px;cursor:pointer;border:2px solid transparent}
+.crow:hover{box-shadow:var(--aw-shadow)}
+.crow.picked{border-color:var(--aw-primary);background:var(--aw-primary-lt)}
+.cr-ca{display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.cr-ca b{font-size:1.05rem}.cr-ca span{font-size:.85rem;color:var(--aw-ink-3)}
+.cr-t{font-weight:600}
+.st{display:inline-block;font-size:.8rem;font-weight:600;padding:4px 12px;border-radius:var(--aw-r-pill);white-space:nowrap}
+.st.open{background:var(--aw-ok-bg);color:var(--aw-ok-tx)} .st.full{background:var(--aw-bad-bg);color:var(--aw-bad-tx)}
+.st.mine{background:var(--aw-primary);color:#fff} .st.na{background:var(--aw-surface-2);color:var(--aw-ink-3)}
+.cr-act{min-width:120px;text-align:right}
+.cr-act button{min-height:46px}
+@media(max-width:600px){
+  .crow{grid-template-columns:62px 1fr;padding:12px}
+  .cr-st{grid-column:2}
+  .cr-act{grid-column:1 / -1;text-align:left;min-width:0}
+  .cr-act button{width:100%}
+}
+.pvcard{position:relative}
+.pv-title h2{font-size:1.25rem}
+.pvwrap{box-shadow:none;border:1px solid var(--aw-border-2);max-height:none;margin:10px 0 14px}
+table.pvt{text-align:center}
+table.pvt th{text-align:center;position:static;background:var(--aw-surface-2)}
+table.pvt tbody th{background:var(--aw-surface-2);font-size:.85rem;white-space:nowrap}
+table.pvt td{padding:6px;vertical-align:middle}
+td.pvc.sel{background:var(--aw-primary-lt)}
+button.pv{min-height:44px;min-width:70px;padding:6px 10px;border-radius:12px;font-size:.85rem;font-weight:700;box-shadow:none}
+button.pv.open{background:var(--aw-ok-bg);color:var(--aw-ok-tx)} button.pv.full{background:var(--aw-bad-bg);color:var(--aw-bad-tx)}
+button.pv.mine{background:var(--aw-primary);color:#fff} button.pv.na{background:var(--aw-surface-2);color:var(--aw-ink-3)}
+button.pv.sel{outline:3px solid var(--aw-primary);outline-offset:1px}
+.pv-detail{display:flex;flex-direction:column;gap:8px}
+.pv-tos{display:flex;flex-wrap:wrap;gap:6px}
+.pv-mine{background:var(--aw-surface-2);border-radius:var(--aw-r);padding:10px 14px}
+.pv-mine ul{margin:6px 0 0;padding-left:20px}
+.pv-act button{width:100%;min-height:52px;font-size:1.02rem}

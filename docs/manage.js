@@ -1,8 +1,10 @@
 // Trang của tổ trưởng: Thống kê giảng viên trong tổ + Thêm ca thi mới.
 // Tổ trưởng (tt1/tt2/tt3) chỉ thấy và chỉ sửa được phần của tổ mình; quản trị (x) thấy cả 3 tổ. Luật Firestore cũng ép như vậy.
 import { doc, writeBatch, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { scriptUrl } from "./firebase-config.js";
+import { icon } from "./icons.js";
 import {
-  db, S, $, esc, toast, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, fmtLong, todayIso, isoOf, parseDates, manageTos,
+  auth, db, S, $, esc, toast, ask, NGANH, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, fmtLong, todayIso, isoOf, parseDates, manageTos,
   statusOf, canEditCa, STATUS_LABEL, needOf, slotId, visibleSlots, findSlot, khoaList, khoaNam, chipsHtml,
 } from "./core.js";
 
@@ -91,87 +93,112 @@ export function addHtml() {
   const dots = S.dots.filter(canEditCa).sort((a, b) => (b.order || 0) - (a.order || 0));
   if (!dots.length) return `<div class="card center muted">Chưa có đợt nào ở trạng thái SOAN hoặc MO. Nhờ quản trị tạo đợt thi trong Google Sheet rồi chạy "Đồng bộ lên Firebase".</div>`;
   const tos = manageTos();
-  return `<div class="card" id="addForm">
-    <h2>Thêm ca thi mới</h2>
-    <p class="small">Bạn nhập số giảng viên cần của <b>${esc(scopeLabel())}</b>. Tổ khác tự nhập phần của họ cho cùng ca (cùng đợt, ngày, ca, khoá, ngành thì gộp vào một ca).</p>
-    <label for="addDot">Đợt thi</label>
-    <select class="field" id="addDot">${dots.map((d) => `<option value="${esc(d.id)}">${esc(d.name)} (${esc(STATUS_LABEL[statusOf(d)])})</option>`).join("")}</select>
-    <label for="addDates">Ngày thi <span class="small">(cách nhau bằng dấu phẩy hoặc xuống dòng; có thể ghi khoảng)</span></label>
-    <textarea class="field" id="addDates" rows="3" placeholder="24/07/2026&#10;27/07/2026-31/07/2026"></textarea>
-    <label class="check"><input type="checkbox" id="addSkipSun" checked> Bỏ Chủ nhật</label>
-    <label>Ca</label>
-    <div class="row">${[1, 2, 3, 4].map((c) => `<label class="check"><input type="checkbox" name="addCa" value="${c}"> Ca ${c} (${caInfo(c).start})</label>`).join("")}</div>
-    <label>Khoá</label>
-    <div class="row">${khoaList().map((k) => `<label class="check"><input type="checkbox" name="addKhoa" value="${k}"> Khoá ${k}${khoaNam(k) ? ` (năm ${khoaNam(k)})` : ""}</label>`).join("")}</div>
-    <label>Ngành</label>
-    <div class="row">${["SPA", "NNA"].map((n) => `<label class="check"><input type="checkbox" name="addNganh" value="${n}"> ${n}</label>`).join("")}</div>
-    <label for="addMon">Môn thi <span class="small">(tuỳ chọn)</span></label>
-    <input class="field" id="addMon" type="text">
-    <label>Số giảng viên cần mỗi ca</label>
-    <div class="row">${tos.map((t) => `<div class="need-in"><span>${esc(TO_LABEL[t])}</span><input class="field" id="addNeed${t}" type="number" min="0" max="20" value="1" inputmode="numeric"></div>`).join("")}</div>
-    <div class="err" id="addErr" role="alert"></div>
-    <div id="addMsg" class="okmsg"></div>
-    <div class="two"><button type="button" id="btnAddPrev">Xem trước</button><button type="button" class="primary" id="btnAddGo">Thêm vào đợt</button></div>
+  return `<div id="addForm">
+    <div class="card">
+      <h2>Chọn đợt và số giảng viên cần</h2>
+      <p class="small">Bạn nhập số giảng viên cần của <b>${esc(scopeLabel())}</b>. Tổ khác tự nhập phần của họ cho cùng ca (cùng đợt, ngày, ca, khoá, ngành thì gộp vào một ca).</p>
+      <label for="addDot">Đợt thi</label>
+      <select class="field" id="addDot">${dots.map((d) => `<option value="${esc(d.id)}">${esc(d.name)} (${esc(STATUS_LABEL[statusOf(d)])})</option>`).join("")}</select>
+      <label>Số giảng viên cần mỗi ca</label>
+      <div class="row">${tos.map((t) => `<div class="need-in"><span>${esc(TO_LABEL[t])}</span><input class="field" id="addNeed${t}" type="number" min="0" max="20" value="1" inputmode="numeric"></div>`).join("")}</div>
+    </div>
+
+    <div class="card scanbox">
+      <h2><span class="ic-inline">${icon("sparkle")}</span> Quét lịch thi từ ảnh (AI)</h2>
+      <p class="small">Chụp bảng lịch thi hoặc chọn ảnh có sẵn (kể cả ảnh chụp màn hình). AI điền sẵn ngày, ca, khoá, ngành, môn; <b>bạn kiểm tra và sửa</b> trước khi thêm. AI có thể đọc sai nên không có gì được lưu cho tới khi bạn bấm Thêm.</p>
+      <div class="two">
+        <label class="filebtn primary" for="scanCam">${icon("camera")} Chụp bằng camera</label>
+        <label class="filebtn" for="scanFile">${icon("image")} Chọn ảnh</label>
+      </div>
+      <input type="file" id="scanCam" accept="image/*" capture="environment" hidden>
+      <input type="file" id="scanFile" accept="image/*" hidden>
+      <div class="err" id="scanErr" role="alert"></div>
+      <div class="okmsg" id="scanMsg" role="status"></div>
+      <div id="scanPreview"></div>
+    </div>
+
+    <div class="card">
+      <h2>Hoặc nhập tay</h2>
+      <label for="addDates">Ngày thi <span class="small">(cách nhau bằng dấu phẩy hoặc xuống dòng; có thể ghi khoảng)</span></label>
+      <textarea class="field" id="addDates" rows="3" placeholder="24/07/2026&#10;27/07/2026-31/07/2026"></textarea>
+      <label class="check"><input type="checkbox" id="addSkipSun" checked> Bỏ Chủ nhật</label>
+      <label>Ca</label>
+      <div class="row">${[1, 2, 3, 4].map((c) => `<label class="check"><input type="checkbox" name="addCa" value="${c}"> Ca ${c} (${caInfo(c).start})</label>`).join("")}</div>
+      <label>Khoá</label>
+      <div class="row">${khoaList().map((k) => `<label class="check"><input type="checkbox" name="addKhoa" value="${k}"> Khoá ${k}${khoaNam(k) ? ` (năm ${khoaNam(k)})` : ""}</label>`).join("")}</div>
+      <label>Ngành</label>
+      <div class="row">${NGANH.map((n) => `<label class="check"><input type="checkbox" name="addNganh" value="${n}"> ${n}</label>`).join("")}</div>
+      <label for="addMon">Môn thi <span class="small">(tuỳ chọn)</span></label>
+      <input class="field" id="addMon" type="text">
+      <div class="err" id="addErr" role="alert"></div>
+      <div id="addMsg" class="okmsg"></div>
+      <div class="two"><button type="button" id="btnAddPrev">Xem trước</button><button type="button" class="primary" id="btnAddGo">Thêm vào đợt</button></div>
+    </div>
   </div>
   <h2 class="sec">Ca đã thêm của ${esc(scopeLabel())}</h2>
   <div id="addList"></div>`;
 }
 
-function readForm() {
+const readNeed = () => { const n = {}; manageTos().forEach((t) => (n[t] = Number($("addNeed" + t).value || 0))); return n; };
+const readForm = () => {
   const checked = (name) => [...document.querySelectorAll(`#addForm input[name=${name}]:checked`)].map((e) => e.value);
-  const f = { dotId: $("addDot").value, dates: $("addDates").value, skipSun: $("addSkipSun").checked,
-    cas: checked("addCa").map(Number), khoas: checked("addKhoa").map(Number), nganhs: checked("addNganh"), mon: $("addMon").value.trim(), need: {} };
-  manageTos().forEach((t) => (f.need[t] = Number($("addNeed" + t).value || 0)));
-  return f;
-}
+  return { dotId: $("addDot").value, dates: $("addDates").value, skipSun: $("addSkipSun").checked,
+    cas: checked("addCa").map(Number), khoas: checked("addKhoa").map(Number), nganhs: checked("addNganh"), mon: $("addMon").value.trim(), need: readNeed() };
+};
 
 const takenOf = (dotId, id, t) => (S.regsBy[dotId] || []).filter((r) => r.slotId === id && r.to === t).length;
 
-/** Tính trước sẽ tạo mới / cập nhật những ca nào; ném lỗi tiếng Việt nếu dữ liệu nhập sai. */
-function plan(f) {
-  const { dates, bad } = parseDates(f.dates);
-  if (bad.length) throw new Error("Không hiểu ngày: " + bad.join(", ") + ". Dạng đúng: 27/07/2026 hoặc 27/07/2026-31/07/2026.");
-  const days = dates.filter((d) => !(f.skipSun && d.getDay() === 0)).map(isoOf);
-  if (!days.length || !f.cas.length || !f.khoas.length || !f.nganhs.length) throw new Error("Chọn ít nhất 1 ngày, 1 ca, 1 khoá, 1 ngành.");
+/** Từ danh sách ca {date,ca,khoa,nganh,mon} tính trước sẽ tạo mới / cập nhật những ca nào. Dùng chung cho nhập tay và quét ảnh. */
+function planCombos(dotId, combos, need) {
   const tos = manageTos();
-  if (tos.some((t) => !Number.isInteger(f.need[t]) || f.need[t] < 0 || f.need[t] > 20)) throw new Error("Số giảng viên cần phải là số nguyên từ 0 đến 20.");
-  if (tos.every((t) => !(f.need[t] > 0))) throw new Error("Nhập số giảng viên cần (từ 1 trở lên) cho tổ của bạn.");
-  const dot = S.dots.find((d) => d.id === f.dotId);
+  if (tos.some((t) => !Number.isInteger(need[t]) || need[t] < 0 || need[t] > 20)) throw new Error("Số giảng viên cần phải là số nguyên từ 0 đến 20.");
+  if (tos.every((t) => !(need[t] > 0))) throw new Error("Nhập số giảng viên cần (từ 1 trở lên) cho tổ của bạn.");
+  const dot = S.dots.find((d) => d.id === dotId);
   if (!dot || !canEditCa(dot)) throw new Error("Đợt này không còn cho thêm ca.");
-  const have = new Map((S.slotsBy[f.dotId] || []).map((s) => [s.id, s]));
-  const creates = [], updates = [];
+  const have = new Map((S.slotsBy[dotId] || []).map((s) => [s.id, s]));
+  const creates = [], updates = [], seen = new Set();
   let same = 0, blocked = 0;
-  for (const date of days) for (const ca of f.cas) for (const khoa of f.khoas) for (const nganh of f.nganhs) {
-    const id = slotId(f.dotId, date, ca, khoa, nganh), ex = have.get(id);
+  for (const c of combos) {
+    const id = slotId(dotId, c.date, c.ca, c.khoa, c.nganh);
+    if (seen.has(id)) continue;                           // quét ảnh có thể ra trùng dòng
+    seen.add(id);
+    const ex = have.get(id);
     if (!ex) {
-      const need = { t1: 0, t2: 0, t3: 0 };
-      tos.forEach((t) => (need["t" + t] = f.need[t]));
-      creates.push({ id, date, ca, khoa, nganh, need });
+      const n = { t1: 0, t2: 0, t3: 0 };
+      tos.forEach((t) => (n["t" + t] = need[t]));
+      creates.push({ id, date: c.date, ca: c.ca, khoa: c.khoa, nganh: c.nganh, need: n, mon: c.mon || "" });
       continue;
     }
     const upd = {};
     for (const t of tos) {                               // ca đã có (do tổ khác tạo): chỉ cập nhật phần của tổ mình
-      const v = f.need[t];
+      const v = need[t];
       if (!v || v === needOf(ex, t)) continue;
-      if (v < takenOf(f.dotId, id, t)) { blocked++; continue; }
+      if (v < takenOf(dotId, id, t)) { blocked++; continue; }
       upd["need.t" + t] = v;
     }
-    if (f.mon && !ex.mon) upd.mon = f.mon;
+    if (c.mon && !ex.mon) upd.mon = c.mon;
     if (Object.keys(upd).length) updates.push({ id, upd }); else same++;
   }
   return { dot, creates, updates, same, blocked };
 }
 
+/** Nhập tay: ngày × ca × khoá × ngành. */
+function plan(f) {
+  const { dates, bad } = parseDates(f.dates);
+  if (bad.length) throw new Error("Không hiểu ngày: " + bad.join(", ") + ". Dạng đúng: 27/07/2026 hoặc 27/07/2026-31/07/2026.");
+  const days = dates.filter((d) => !(f.skipSun && d.getDay() === 0)).map(isoOf);
+  if (!days.length || !f.cas.length || !f.khoas.length || !f.nganhs.length) throw new Error("Chọn ít nhất 1 ngày, 1 ca, 1 khoá, 1 ngành.");
+  const combos = [];
+  for (const date of days) for (const ca of f.cas) for (const khoa of f.khoas) for (const nganh of f.nganhs) combos.push({ date, ca, khoa, nganh, mon: f.mon });
+  return planCombos(f.dotId, combos, f.need);
+}
+
 const summary = (p) => `${p.creates.length} ca mới · ${p.updates.length} ca cập nhật · ${p.same} ca đã có sẵn, giữ nguyên` + (p.blocked ? ` · ${p.blocked} ca bỏ qua vì đã có nhiều người đăng ký hơn số mới` : "");
 
-async function runAdd(dry) {
-  $("addErr").textContent = ""; $("addMsg").textContent = "";
-  let f, p;
-  try { f = readForm(); p = plan(f); } catch (e) { $("addErr").textContent = e.message; return; }
-  if (dry) { $("addMsg").textContent = "Sẽ thực hiện: " + summary(p); return; }
-  if (!p.creates.length && !p.updates.length) { $("addMsg").textContent = "Không có gì để thêm: " + summary(p); return; }
+/** Ghi kế hoạch lên Firestore (chia lô ≤ 400). Trả true nếu xong. */
+async function commit(p, dotId, errId, msgId) {
   const ops = [
-    ...p.creates.map((c) => ({ id: c.id, set: { dotId: f.dotId, namHoc: p.dot.namHoc, date: c.date, ca: c.ca, khoa: c.khoa, nganh: c.nganh, mon: f.mon, note: "", need: c.need, active: true, createdBy: S.me.email, createdAt: serverTimestamp() } })),
+    ...p.creates.map((c) => ({ id: c.id, set: { dotId, namHoc: p.dot.namHoc, date: c.date, ca: c.ca, khoa: c.khoa, nganh: c.nganh, mon: c.mon, note: "", need: c.need, active: true, createdBy: S.me.email, createdAt: serverTimestamp() } })),
     ...p.updates.map((u) => ({ id: u.id, upd: u.upd })),
   ];
   try {
@@ -180,13 +207,142 @@ async function runAdd(dry) {
       ops.slice(i, i + 400).forEach((o) => (o.set ? b.set(doc(db, "slots", o.id), o.set) : b.update(doc(db, "slots", o.id), o.upd)));
       await b.commit();
     }
-    $("addMsg").textContent = "Đã lưu: " + summary(p);
+    $(msgId).textContent = "Đã lưu: " + summary(p);
     toast("Đã thêm ca thi.");
+    return true;
   } catch (e) {
-    $("addErr").textContent = e.code === "permission-denied"
-      ? "Không lưu được: đợt đã đóng, hoặc ca vừa được tổ khác tạo cùng lúc. Hãy bấm Xem trước rồi thử lại."
+    $(errId).textContent = e.code === "permission-denied"
+      ? "Không lưu được: đợt đã đóng, hoặc ca vừa được tổ khác tạo cùng lúc. Hãy thử lại."
       : "Lỗi mạng, thử lại. (" + (e.code || e.message) + ")";
+    return false;
   }
+}
+
+async function runAdd(dry) {
+  $("addErr").textContent = ""; $("addMsg").textContent = "";
+  let f, p;
+  try { f = readForm(); p = plan(f); } catch (e) { $("addErr").textContent = e.message; return; }
+  if (dry) { $("addMsg").textContent = "Sẽ thực hiện: " + summary(p); return; }
+  if (!p.creates.length && !p.updates.length) { $("addMsg").textContent = "Không có gì để thêm: " + summary(p); return; }
+  await commit(p, f.dotId, "addErr", "addMsg");
+}
+
+// ---------------------------------------------------------------------  Quét lịch thi từ ảnh (AI)
+let scanRows = [];                                           // các dòng AI đọc được; tổ trưởng sửa trực tiếp ở bản xem trước
+
+const isoOk = (v) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ""); return !!m && new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDate() === +m[3]; };
+const rowErr = (r) => ({ date: !isoOk(r.date), ca: ![1, 2, 3, 4].includes(Number(r.ca)), khoa: !khoaList().includes(Number(r.khoa)), nganh: !NGANH.includes(r.nganh) });
+const rowOk = (r) => !Object.values(rowErr(r)).some(Boolean);
+
+const SCAN_ERR = {
+  auth: "Phiên đăng nhập không hợp lệ, hãy đăng nhập lại.",
+  forbidden: "Chỉ tổ trưởng mới dùng được chức năng này.",
+  no_key: "Chưa cài khoá Gemini. Quản trị viên dán GEMINI_API_KEY vào Apps Script → Project Settings → Script Properties.",
+  limit: "Hôm nay bạn đã quét quá nhiều lần. Hãy nhập tay hoặc thử lại vào ngày mai.",
+  bad_image: "Ảnh không hợp lệ hoặc quá lớn.",
+  gemini: "AI đang bận hoặc gặp lỗi. Thử lại sau ít phút.",
+  parse: "AI trả về kết quả không đọc được. Thử chụp rõ hơn.",
+  no_url: "Chưa cấu hình địa chỉ Apps Script.",
+};
+
+/** Thu nhỏ ảnh (cạnh dài ≤ 1800px, JPEG) để gửi nhanh trên mạng điện thoại. */
+async function compress(file) {
+  const bmp = await createImageBitmap(file).catch(() => null);
+  if (!bmp) throw new Error("bad_image");
+  const k = Math.min(1, 1800 / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+  cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
+  let q = 0.85, blob;
+  do { blob = await new Promise((r) => cv.toBlob(r, "image/jpeg", q)); q -= 0.15; } while (blob && blob.size > 2.5 * 1024 * 1024 && q > 0.3);
+  if (!blob) throw new Error("bad_image");
+  const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(",")[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
+  return { b64, mime: "image/jpeg" };
+}
+
+async function runScan(file) {
+  $("scanErr").textContent = ""; $("scanMsg").textContent = "Đang xử lý ảnh…"; $("scanPreview").innerHTML = ""; scanRows = [];
+  const dot = S.dots.find((d) => d.id === $("addDot").value);
+  try {
+    if (!scriptUrl) throw new Error("no_url");
+    const { b64, mime } = await compress(file);
+    $("scanMsg").textContent = "AI đang đọc lịch thi (có thể mất 10–30 giây)…";
+    const idToken = await auth.currentUser.getIdToken();
+    const res = await fetch(scriptUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "scan", idToken, image: b64, mime, namHoc: dot?.namHoc || S.cfg.namHoc }) });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || "fail");
+    scanRows = (j.rows || []).map((r) => ({ ...r, ca: r.ca || "", khoa: r.khoa || "", on: true }));
+    scanRows.forEach((r) => (r.on = rowOk(r)));                        // dòng thiếu thông tin: mặc định bỏ tick, chờ sửa
+    if (!scanRows.length) { $("scanMsg").textContent = ""; $("scanErr").textContent = "AI không tìm thấy ca thi nào trong ảnh. Hãy chụp rõ hơn (đủ sáng, không bị nghiêng) hoặc nhập tay."; return; }
+    $("scanMsg").textContent = `AI đọc được ${scanRows.length} dòng. Ô màu đỏ là chỗ AI chưa chắc: hãy sửa, hoặc bỏ tick dòng không cần.`;
+    renderScan();
+  } catch (e) {
+    $("scanMsg").textContent = "";
+    $("scanErr").textContent = SCAN_ERR[e.message] || "Không quét được lúc này. Kiểm tra mạng rồi thử lại, hoặc nhập tay.";
+  }
+}
+
+function renderScan() {
+  const sel = (i, f, opts, cur) => `<select data-scan="${i}" data-f="${f}"><option value="">?</option>${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  const rows = scanRows.map((r, i) => {
+    const e = rowErr(r);
+    return `<tr data-row="${i}" class="${r.on ? "" : "off"}">
+      <td><input type="checkbox" data-scan="${i}" data-f="on" ${r.on ? "checked" : ""} aria-label="Thêm dòng ${i + 1}"></td>
+      <td class="${e.date ? "bad" : ""}"><input type="date" data-scan="${i}" data-f="date" value="${esc(r.date)}"></td>
+      <td class="${e.ca ? "bad" : ""}">${sel(i, "ca", [1, 2, 3, 4].map((c) => [c, `Ca ${c} · ${caInfo(c).start}`]), r.ca)}</td>
+      <td class="${e.khoa ? "bad" : ""}">${sel(i, "khoa", khoaList().map((k) => [k, `K${k}`]), r.khoa)}</td>
+      <td class="${e.nganh ? "bad" : ""}">${sel(i, "nganh", NGANH.map((n) => [n, n]), r.nganh)}</td>
+      <td><input type="text" data-scan="${i}" data-f="mon" value="${esc(r.mon)}" placeholder="Môn thi"></td>
+      <td class="small">${esc(r.time || "")}</td></tr>`;
+  }).join("");
+  $("scanPreview").innerHTML = `<div class="tbl-wrap"><table class="list scan"><thead><tr><th></th><th>Ngày</th><th>Ca</th><th>Khoá</th><th>Ngành</th><th>Môn</th><th>Giờ AI đọc</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="okmsg" id="scanSum"></div>
+    <div class="two"><button type="button" id="btnScanClear">Bỏ kết quả</button><button type="button" class="primary" id="btnScanAdd">Thêm</button></div>`;
+  updateScanSummary();
+}
+
+function updateScanSummary() {
+  const on = scanRows.filter((r) => r.on), good = on.filter(rowOk).length, badN = on.length - good;
+  if ($("scanSum")) $("scanSum").textContent = `Đã chọn ${on.length} dòng` + (badN ? ` · ${badN} dòng còn thiếu thông tin (ô đỏ), sẽ bị bỏ qua` : "");
+  if ($("btnScanAdd")) { $("btnScanAdd").textContent = `Thêm ${good} ca đã chọn`; $("btnScanAdd").disabled = good === 0; }
+}
+
+/** Sửa một ô trong bản xem trước: cập nhật tại chỗ (không vẽ lại bảng để khỏi mất con trỏ khi đang gõ). */
+function editScan(el) {
+  const i = Number(el.dataset.scan), f = el.dataset.f, r = scanRows[i];
+  if (!r) return;
+  r[f] = f === "on" ? el.checked : el.value;
+  if (f !== "on" && f !== "mon") {
+    const e = rowErr(r);
+    el.closest("tr").querySelectorAll("[data-f]").forEach((x) => { if (e[x.dataset.f] !== undefined) x.closest("td").classList.toggle("bad", e[x.dataset.f]); });
+    if (rowOk(r) && !r.on) { r.on = true; el.closest("tr").querySelector('[data-f="on"]').checked = true; }
+  }
+  el.closest("tr").classList.toggle("off", !r.on);
+  updateScanSummary();
+}
+
+async function applyScan() {
+  $("scanErr").textContent = "";
+  const rows = scanRows.filter((r) => r.on && rowOk(r));
+  let p;
+  try { p = planCombos($("addDot").value, rows.map((r) => ({ date: r.date, ca: Number(r.ca), khoa: Number(r.khoa), nganh: r.nganh, mon: (r.mon || "").trim() })), readNeed()); }
+  catch (e) { $("scanErr").textContent = e.message; return; }
+  if (!p.creates.length && !p.updates.length) { $("scanMsg").textContent = "Không có gì để thêm: " + summary(p); return; }
+  const need = readNeed();
+  const ok = await ask({ title: `Thêm ca vào "${p.dot.name}"?`, ok: "Thêm", cancel: "Xem lại", ic: "calendarPlus",
+    rows: [["Ca mới", String(p.creates.length)], ["Cập nhật", String(p.updates.length)], ["Giữ nguyên", String(p.same)], ["Số GV cần mỗi ca", manageTos().map((t) => `${TO_SHORT[t]}: ${need[t]}`).join(" · ")]] });
+  if (!ok) return;
+  if (await commit(p, $("addDot").value, "scanErr", "scanMsg")) { scanRows = []; $("scanPreview").innerHTML = ""; }
+}
+
+/** Các thay đổi (change) trong trang; trả true nếu là của tổ trưởng. */
+export function manageChange(e) {
+  const t = e.target;
+  if (t.id === "addDot") { refreshAddList(); return true; }
+  if (t.id === "scanCam" || t.id === "scanFile") { const f = t.files && t.files[0]; t.value = ""; if (f) runScan(f); return true; }
+  if (t.dataset && t.dataset.scan !== undefined) { editScan(t); return true; }
+  return false;
 }
 
 /** Danh sách ca của tổ mình trong đợt đang chọn: sửa số lượng hoặc xoá. Không vẽ lại khi người dùng đang gõ trong bảng. */
@@ -227,7 +383,8 @@ async function delRow(id) {
   const tos = manageTos().filter((t) => needOf(s, t) > 0);
   const busy = tos.map((t) => takenOf(s.dotId, id, t)).reduce((a, b) => a + b, 0);
   if (busy) return toast(`Ca này đã có ${busy} người đăng ký. Hãy nhờ họ huỷ trước khi xoá.`);
-  if (!confirm(`Xoá ca ${fmtLong(s.date)} · Ca ${s.ca} · K${s.khoa} ${s.nganh}?\n(Chỉ xoá phần của ${scopeLabel()}; tổ khác vẫn giữ nguyên.)`)) return;
+  if (!(await ask({ title: "Xoá ca thi này?", text: `Chỉ xoá phần của ${scopeLabel()}; tổ khác vẫn giữ nguyên.`, ok: "Xoá ca", cancel: "Giữ lại", danger: true,
+    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · ${caInfo(s.ca).start}`], ["Khoá - Ngành", `Khoá ${s.khoa} · ${s.nganh}`]] }))) return;
   const upd = {}; tos.forEach((t) => (upd["need.t" + t] = 0));
   try { await updateDoc(doc(db, "slots", id), upd); toast("Đã xoá ca."); }
   catch (e) { toast("Không xoá được (đợt có thể đã đóng)."); }
@@ -241,6 +398,8 @@ export function manageClick(e) {
   if (e.target.closest("#btnCsv")) { downloadCsv(); return true; }
   if (e.target.closest("#btnAddPrev")) { runAdd(true); return true; }
   if (e.target.closest("#btnAddGo")) { runAdd(false); return true; }
+  if (e.target.closest("#btnScanAdd")) { applyScan(); return true; }
+  if (e.target.closest("#btnScanClear")) { scanRows = []; $("scanPreview").innerHTML = ""; $("scanMsg").textContent = ""; return true; }
   if ((el = e.target.closest("[data-save]"))) { saveRow(el.dataset.save); return true; }
   if ((el = e.target.closest("[data-del]"))) { delRow(el.dataset.del); return true; }
   return false;

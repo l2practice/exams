@@ -7,11 +7,11 @@ import { doc, getDoc, updateDoc, collection, query, where, onSnapshot, writeBatc
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { resetUrl } from "./firebase-config.js";
 import {
-  auth, db, S, $, esc, toast, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, dmyOf, fmtLong, todayIso, khoaNam,
+  auth, db, S, $, esc, toast, ask, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, dmyOf, fmtLong, todayIso, khoaNam,
   isManager, statusOf, isRegOpen, STATUS_LABEL, needOf, visibleSlots, findSlot, chipsHtml, manageTos,
 } from "./core.js";
 import { IC, LOGO, icon } from "./icons.js";
-import { statsHtml, addHtml, refreshAddList, manageClick } from "./manage.js";
+import { statsHtml, addHtml, refreshAddList, manageClick, manageChange } from "./manage.js";
 
 // =====================================================================  Đăng nhập
 const EMAIL_KEY = "gacthi.email";
@@ -40,7 +40,8 @@ function show(id) {
 $("authLogo").innerHTML = LOGO; $("railLogo").innerHTML = LOGO;
 $("icLogout").innerHTML = IC.logout;
 
-$("email").value = store.get(EMAIL_KEY);                // ô email luôn nhớ email lần trước
+$("email").value = store.get(EMAIL_KEY);
+S.regView = store.get("gacthi.regView") === "table" ? "table" : "list";                // ô email luôn nhớ email lần trước
 $("showPw").onchange = (e) => ($("pw").type = e.target.checked ? "text" : "password");
 
 $("loginForm").onsubmit = async (e) => {
@@ -202,7 +203,7 @@ function render() {
 S.render = render;
 
 $("awNav").onclick = (e) => { const b = e.target.closest("[data-nav]"); if (b) go(b.dataset.nav); };
-$("page").onchange = (e) => { if (e.target.id === "addDot") refreshAddList(); };
+$("page").onchange = (e) => { manageChange(e); };
 $("page").onclick = (e) => {
   if (manageClick(e)) return;
   let el;
@@ -211,6 +212,12 @@ $("page").onclick = (e) => {
   if ((el = e.target.closest("[data-reg],[data-cancel]"))) {
     const s = findSlot(el.dataset.reg || el.dataset.cancel);
     if (s) { if (el.dataset.reg) register(s); else cancel(s); }
+    return;
+  }
+  if ((el = e.target.closest("[data-rv]"))) { S.regView = el.dataset.rv; store.set("gacthi.regView", S.regView); return render(); }
+  if ((el = e.target.closest("[data-pick]"))) {              // bấm một dòng: xem trước cả ngày ở trên
+    S.pick = el.dataset.pick; render();
+    $("preview")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 };
 
@@ -261,14 +268,103 @@ function registerHtml() {
   const khoas = [...new Set(all.map((s) => s.khoa))].sort((a, b) => a - b);
   const nganhs = [...new Set(all.map((s) => s.nganh))].sort();
   const mine = new Set(S.myYear.map((r) => r.slotId));
-  return `<div class="filters">
+  const head = `<div class="chips viewtoggle">${chipsHtml([["list", "Dạng danh sách"], ["table", "Dạng bảng"]], S.regView, "rv")}</div>
+    <div class="filters">
       <div class="fl">Lọc theo khoá</div>
       <div class="chips">${chipsHtml([["all", "Mọi khoá"], ...khoas.map((k) => [k, `Khoá ${k}` + (khoaNam(k) ? ` (năm ${khoaNam(k)})` : "")])], S.fKhoa, "fk")}</div>
       <div class="fl">Lọc theo ngành</div>
       <div class="chips">${chipsHtml([["all", "Mọi ngành"], ...nganhs.map((n) => [n, n])], S.fNganh, "fn")}</div>
-    </div>
-    <p class="legend"><span class="cell free sm">+</span> bấm để đăng ký · <span class="cell mine sm">✔</span> ca của bạn, bấm để huỷ · <b>X</b> đồng nghiệp đã đăng ký. Vuốt ngang để xem các ngày khác.</p>` +
+    </div>`;
+  if (S.regView === "list") return head + listView(dots, mine);
+  return head + `<p class="legend"><span class="cell free sm">+</span> bấm để đăng ký · <span class="cell mine sm">✔</span> ca của bạn, bấm để huỷ · <b>X</b> đồng nghiệp đã đăng ký. Vuốt ngang để xem các ngày khác.</p>` +
     dots.map((d) => tableFor(d, mine)).join("");
+}
+
+// ---------------------------------------------------------------------  Dạng danh sách + bảng xem trước cả ngày
+// Ca của nhiều đợt có thể sát ngày hoặc trùng ngày nhau, nên danh sách gộp mọi đợt theo ngày
+// và bảng xem trước của một ngày gồm cả ca của các đợt khác nhau.
+const countsOf = (dotId) => {
+  const c = {};
+  for (const r of S.regsBy[dotId] || []) (c[r.slotId] ||= { t1: 0, t2: 0, t3: 0 })["t" + r.to]++;
+  return c;
+};
+/** Trạng thái của một ca với tổ của tôi: mine | open (còn chỗ) | full | na (ca không cần tổ tôi). */
+function stateOf(s, cnt, mine) {
+  if (mine.has(s.id)) return { k: "mine", t: "✔ Của bạn" };
+  const need = needOf(s, S.me.to);
+  if (!need) return { k: "na", t: "–" };
+  const left = need - (cnt[s.id]?.["t" + S.me.to] || 0);
+  return left > 0 ? { k: "open", t: `Còn ${left}`, left } : { k: "full", t: "Đủ" };
+}
+const dotName = (id) => S.dots.find((d) => d.id === id)?.name || "";
+
+function actionHtml(s, cnt, mine) {
+  if (mine.has(s.id)) return `<button class="danger" data-cancel="${esc(s.id)}" ${isRegOpen(dotOf(s)) ? "" : "disabled"}>Huỷ ca này</button>`;
+  const why = reason(s, cnt[s.id]);
+  if (!why) return `<button class="primary" data-reg="${esc(s.id)}">Đăng ký</button>`;
+  return needOf(s, S.me.to) && why !== "Tổ của bạn đã đủ người" ? `<span class="small">${esc(why)}</span>` : "";
+}
+
+function listView(dots, mine) {
+  const cnts = Object.fromEntries(dots.map((d) => [d.id, countsOf(d.id)]));
+  const cntOf = (s) => cnts[s.dotId] || {};
+  const every = dots.flatMap((d) => visibleSlots(d.id));
+  const items = every.filter((s) => (S.fKhoa === "all" || String(s.khoa) === S.fKhoa) && (S.fNganh === "all" || s.nganh === S.fNganh))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.ca - b.ca || a.khoa - b.khoa || a.nganh.localeCompare(b.nganh));
+  if (!items.length) return `<div class="card center muted">Không có ca nào khớp bộ lọc.</div>`;
+  if (!S.pick || !every.some((s) => s.id === S.pick)) {                // mặc định chọn ca gần nhất chưa diễn ra
+    const t = todayIso();
+    S.pick = (items.find((s) => s.date >= t) || items[0]).id;
+  }
+  const multi = dots.length > 1;
+  let html = "", last = "";
+  for (const s of items) {
+    if (s.date !== last) { html += `<div class="dayhead">${esc(fmtLong(s.date))}</div>`; last = s.date; }
+    const st = stateOf(s, cntOf(s), mine), ci = caInfo(s.ca);
+    html += `<div class="crow ${st.k} ${s.id === S.pick ? "picked" : ""}" data-pick="${esc(s.id)}">
+      <div class="cr-ca"><b>Ca ${s.ca}</b><span>${ci.start}</span></div>
+      <div class="cr-main"><div class="cr-t">Khoá ${esc(s.khoa)} · ${esc(s.nganh)}</div>
+        <div class="small">${esc(s.mon || "")}${multi ? `${s.mon ? " · " : ""}${esc(dotName(s.dotId))}` : ""}</div></div>
+      <div class="cr-st"><span class="st ${st.k}">${esc(st.t === "–" ? "Không cần tổ bạn" : st.t)}</span></div>
+      <div class="cr-act">${actionHtml(s, cnts, mine)}</div></div>`;
+  }
+  return `<div id="preview">${previewHtml(every, cnts, mine)}</div><div class="clist">${html}</div>`;
+}
+
+function previewHtml(every, cnts, mine) {
+  const p = every.find((s) => s.id === S.pick);
+  if (!p) return "";
+  const day = every.filter((s) => s.date === p.date);
+  const cols = [...new Set(day.map((s) => `${s.khoa}|${s.nganh}`))].sort((a, b) => Number(a.split("|")[0]) - Number(b.split("|")[0]) || a.localeCompare(b));
+  const cas = [...new Set(day.map((s) => s.ca))].sort((a, b) => a - b);
+  const head = cols.map((c) => { const [k, n] = c.split("|"); return `<th>K${esc(k)}<br><small>${esc(n)}</small></th>`; }).join("");
+  const body = cas.map((ca) => `<tr><th>Ca ${ca}<br><small>${caInfo(ca).start}</small></th>${cols.map((c) => {
+    const cell = day.filter((s) => s.ca === ca && `${s.khoa}|${s.nganh}` === c);
+    if (!cell.length) return `<td class="pvc empty"></td>`;
+    return `<td class="pvc ${cell.some((s) => s.id === S.pick) ? "sel" : ""}">${cell.map((s) => {
+      const st = stateOf(s, cnts[s.dotId] || {}, mine);
+      return `<button class="pv ${st.k} ${s.id === S.pick ? "sel" : ""}" data-pick="${esc(s.id)}">${esc(st.t)}</button>`;
+    }).join("")}</td>`;
+  }).join("")}</tr>`).join("");
+  const cnt = cnts[p.dotId] || {};
+  const regs = (S.regsBy[p.dotId] || []).filter((r) => r.slotId === p.id);
+  const tos = [1, 2, 3].filter((t) => needOf(p, t)).map((t) => `<span class="pill ${t === S.me.to ? "warn" : ""}">${esc(TO_SHORT[t])}: ${cnt[p.id]?.["t" + t] || 0}/${needOf(p, t)}</span>`).join(" ");
+  const mineToday = S.myYear.filter((r) => r.date === p.date).sort((a, b) => a.ca - b.ca).map((r) => {
+    const s = findSlot(r.slotId);
+    return `<li>Ca ${r.ca} · ${caInfo(r.ca).start} · ${s ? `Khoá ${esc(s.khoa)} ${esc(s.nganh)}` : ""}</li>`;
+  }).join("");
+  const ci = caInfo(p.ca);
+  return `<div class="card pvcard">
+    <div class="pv-title"><div><div class="small">Xem trước cả ngày</div><h2>${esc(fmtLong(p.date))}</h2></div></div>
+    <div class="tbl-wrap pvwrap"><table class="list pvt"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table></div>
+    <div class="pv-detail">
+      <div><b>Ca ${p.ca} · bắt đầu ${ci.start}</b> <span class="small">(có mặt tại HĐ thi lúc ${ci.arrive})</span></div>
+      <div>Khoá ${esc(p.khoa)} · ${esc(p.nganh)}${p.mon ? ` · ${esc(p.mon)}` : ""} <span class="small">· ${esc(dotName(p.dotId))}</span></div>
+      <div class="pv-tos">${tos}</div>
+      <div class="small">${regs.length ? "Đã đăng ký: " + regs.map((r) => esc(r.name)).join(", ") : "Chưa có ai đăng ký ca này."}</div>
+      ${mineToday ? `<div class="pv-mine"><b>Ca của bạn trong ngày này</b><ul>${mineToday}</ul></div>` : ""}
+      <div class="pv-act">${actionHtml(p, cnts[p.dotId] ? { [p.id]: cnts[p.dotId][p.id] } : {}, mine)}</div>
+    </div></div>`;
 }
 
 const TO_SHORT_LABEL = TO_SHORT;
@@ -337,7 +433,8 @@ function tableFor(d, mine) {
 /** Đăng ký: giữ một "chỗ" (claims) và ghi lượt đăng ký (regs) trong cùng một batch; luật Firestore bắt hai bên khớp nhau. */
 async function register(s) {
   const to = S.me.to, email = S.me.email, ci = caInfo(s.ca);
-  if (!confirm(`Đăng ký gác thi?\n\n${fmtLong(s.date)}\nCa ${s.ca}: bắt đầu ${ci.start} (có mặt lúc ${ci.arrive})\nKhoá ${s.khoa} - ${s.nganh}${s.mon ? "\n" + s.mon : ""}`)) return;
+  if (!(await ask({ title: "Đăng ký gác thi?", ok: "Đăng ký", cancel: "Không",
+    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · bắt đầu ${ci.start}`], ["Có mặt tại HĐ thi", ci.arrive], ["Khoá - Ngành", `Khoá ${s.khoa} · ${s.nganh}`], ["Môn", s.mon || ""]] }))) return;
   const regId = `${s.date}_${s.ca}__${email}`;
   const need = needOf(s, to);
   const used = new Set((S.regsBy[s.dotId] || []).filter((r) => r.slotId === s.id && r.to === to).map((r) => r.k));
@@ -355,7 +452,8 @@ async function register(s) {
 
 async function cancel(s) {
   const ci = caInfo(s.ca);
-  if (!confirm(`Huỷ đăng ký?\n\n${fmtLong(s.date)} · Ca ${s.ca} (${ci.start}) · Khoá ${s.khoa} - ${s.nganh}`)) return;
+  if (!(await ask({ title: "Huỷ đăng ký ca này?", ok: "Huỷ ca này", cancel: "Giữ lại", danger: true, ic: "clock",
+    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · ${ci.start}`], ["Khoá - Ngành", `Khoá ${s.khoa} · ${s.nganh}`]] }))) return;
   const r = S.myYear.find((x) => x.slotId === s.id);
   if (!r) return;
   try {
