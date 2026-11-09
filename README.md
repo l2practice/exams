@@ -22,7 +22,7 @@ Tổ trưởng chỉ thấy giảng viên của tổ mình và chỉ sửa đư�
 Cột C (Tổ) là tổ mà GV thuộc về, dùng để đăng ký ca; tổ trưởng cũng đăng ký gác thi như mọi người.
 
 ### Giao diện
-Theo hệ thiết kế **ArticuWrite** (repo `l2practice/artwrite`): nền tím nhạt, thanh biểu tượng bên trái (biểu tượng trên chữ, mục đang chọn tô màu periwinkle), thanh tiêu đề có thẻ người dùng, thẻ trắng bóng nhẹ, nút dạng viên thuốc, font Be Vietnam Pro. Trên điện thoại, thanh bên thành **ngăn kéo** mở bằng nút ☰ ở góc trái. Biểu tượng nằm trong `docs/icons.js`, logo và favicon là `docs/icon.svg`. Chữ cỡ lớn hơn ArticuWrite một chút vì nhiều giảng viên lớn tuổi.
+Theo hệ thiết kế **ArticuWrite** (repo `l2practice/artwrite`): nền tím nhạt, thanh biểu tượng bên trái (biểu tượng trên chữ, mục đang chọn tô màu periwinkle), thanh tiêu đề có thẻ người dùng, thẻ trắng bóng nhẹ, nút dạng viên thuốc, font Be Vietnam Pro. Trên điện thoại, thanh bên thành **thanh tab cố định ở đáy màn hình** (luôn thấy, không phải mở menu); nút Đăng xuất chuyển vào trang Cài đặt để tránh bấm nhầm. Biểu tượng nằm trong `docs/icons.js`, logo và favicon là `docs/icon.svg`. Chữ cỡ lớn hơn ArticuWrite một chút vì nhiều giảng viên lớn tuổi.
 
 ## 2. Đợt thi: 3 trạng thái (tab `Dot`, cột D)
 

@@ -38,7 +38,7 @@ function show(id) {
 }
 // biểu tượng cố định
 $("authLogo").innerHTML = LOGO; $("railLogo").innerHTML = LOGO;
-$("icLogout").innerHTML = IC.logout; $("awMenuBtn").innerHTML = IC.menu;
+$("icLogout").innerHTML = IC.logout;
 
 $("email").value = store.get(EMAIL_KEY);                // ô email luôn nhớ email lần trước
 $("showPw").onchange = (e) => ($("pw").type = e.target.checked ? "text" : "password");
@@ -71,13 +71,12 @@ $("btnForgot").onclick = async () => {
   finally { $("btnForgot").disabled = false; }
 };
 
-$("btnOut").onclick = $("btnOut2").onclick = () => signOut(auth);
+$("btnOut").onclick = $("btnOut2").onclick = $("btnOutSet").onclick = () => signOut(auth);
 
 // Cài đặt: đổi mật khẩu (một trang riêng trên thanh bên trái)
 const defaultRoute = () => (isManager() ? "mg:stats" : "me:overview");
 function go(route) {
   S.route = route;
-  $("awSide").classList.remove("open");
   render();
   window.scrollTo({ top: 0 });
 }
@@ -203,8 +202,6 @@ function render() {
 S.render = render;
 
 $("awNav").onclick = (e) => { const b = e.target.closest("[data-nav]"); if (b) go(b.dataset.nav); };
-$("awMenuBtn").onclick = () => $("awSide").classList.toggle("open");           // điện thoại: mở / đóng thanh bên
-$("awContent").onclick = () => $("awSide").classList.remove("open");
 $("page").onchange = (e) => { if (e.target.id === "addDot") refreshAddList(); };
 $("page").onclick = (e) => {
   if (manageClick(e)) return;
