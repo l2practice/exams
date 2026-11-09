@@ -234,10 +234,85 @@ function menuCheck() {
 // ---------------------------------------------------------------- Nhập nhanh
 function showQuickAdd() {
   const ma = pickDot();
-  const t = HtmlService.createTemplateFromFile('Dialog');
-  t.ma = ma;
-  t.khoas = getCfg().khoaHopLe.split(',').map((s) => s.trim());
-  SpreadsheetApp.getUi().showModalDialog(t.evaluate().setWidth(520).setHeight(660), `Thêm ca nhanh – đợt ${ma}`);
+  const html = HtmlService.createHtmlOutput(quickAddHtml(ma, getCfg().khoaHopLe.split(',').map((x) => x.trim())))
+    .setWidth(520).setHeight(660);
+  SpreadsheetApp.getUi().showModalDialog(html, `Thêm ca nhanh – đợt ${ma}`);
+}
+
+/** Nội dung hộp thoại "Thêm ca nhanh" – nhúng sẵn trong Code.gs nên không cần tạo file HTML riêng. */
+function quickAddHtml(ma, khoas) {
+  const khoaHtml = khoas.map((k) => `<label><input type="checkbox" name="khoa" value="${esc(k)}"> Khoá ${esc(k)}</label>`).join('');
+  return `<!doctype html>
+<html><head><base target="_top">
+<style>
+  body{font:14px system-ui,sans-serif;margin:14px;color:#1c2430}
+  label.f{display:block;font-weight:600;margin:12px 0 4px}
+  textarea,input[type=text],input[type=number]{width:100%;box-sizing:border-box;padding:6px;font:inherit}
+  .row{display:flex;gap:14px;flex-wrap:wrap}
+  .row label{font-weight:400}
+  .need{display:flex;gap:8px}.need div{flex:1}
+  small{color:#667085}
+  button{padding:8px 14px;font:inherit;margin-right:6px;cursor:pointer}
+  #go{background:#1d5fd6;color:#fff;border:0;border-radius:6px}
+  #msg{margin-top:12px;padding:8px;border-radius:6px;display:none}
+  .ok{background:#e7f6ef;color:#12805c}.err{background:#fde2e1;color:#b42318}
+</style></head>
+<body>
+<label class="f">Ngày <small>(mỗi dòng/dấu phẩy một mục; hỗ trợ khoảng)</small></label>
+<textarea id="dates" rows="3" placeholder="24/07/2026&#10;27/07/2026-31/07/2026"></textarea>
+<label><input type="checkbox" id="skipSun" checked> Bỏ Chủ nhật</label>
+
+<label class="f">Ca <small>(1: 7:30 · 2: 9:00 · 3: 13:30 · 4: 15:00)</small></label>
+<div class="row">
+  <label><input type="checkbox" name="ca" value="1"> Ca 1</label>
+  <label><input type="checkbox" name="ca" value="2"> Ca 2</label>
+  <label><input type="checkbox" name="ca" value="3"> Ca 3</label>
+  <label><input type="checkbox" name="ca" value="4"> Ca 4</label>
+</div>
+
+<label class="f">Khoá</label>
+<div class="row">${khoaHtml}</div>
+
+<label class="f">Ngành</label>
+<div class="row">
+  <label><input type="checkbox" name="nganh" value="SPA"> SPA</label>
+  <label><input type="checkbox" name="nganh" value="NNA"> NNA</label>
+</div>
+
+<label class="f">Môn thi <small>(tuỳ chọn, sửa riêng từng dòng sau)</small></label>
+<input type="text" id="mon">
+
+<label class="f">Số GV cần mỗi ca</label>
+<div class="need">
+  <div>Chuyên 1 (SPA)<input type="number" id="t1" min="0" value="1"></div>
+  <div>Chuyên 2 (NNA)<input type="number" id="t2" min="0" value="1"></div>
+  <div>Cơ bản<input type="number" id="t3" min="0" value="0"></div>
+</div>
+
+<p><button id="prev">Xem trước</button><button id="go">Thêm vào CaThi</button></p>
+<div id="msg"></div>
+
+<script>
+var MA = ${JSON.stringify(ma)};
+function vals(n) { return [].slice.call(document.querySelectorAll('input[name=' + n + ']:checked')).map(function (e) { return e.value; }); }
+function form(dry) {
+  return { ma: MA, dates: document.getElementById('dates').value, skipSun: document.getElementById('skipSun').checked,
+    cas: vals('ca'), khoas: vals('khoa'), nganhs: vals('nganh'), mon: document.getElementById('mon').value,
+    t1: document.getElementById('t1').value, t2: document.getElementById('t2').value, t3: document.getElementById('t3').value, dryRun: dry };
+}
+function say(t, ok) { var m = document.getElementById('msg'); m.style.display = 'block'; m.className = ok ? 'ok' : 'err'; m.textContent = t; }
+function run(dry) {
+  google.script.run
+    .withSuccessHandler(function (r) {
+      say((dry ? 'Sẽ thêm ' : 'Đã thêm ') + r.added + ' ca mới (bỏ qua ' + r.duplicates + ' ca đã có).' + (dry ? '' : ' Có thể thêm đợt tiếp theo.'), true);
+    })
+    .withFailureHandler(function (e) { say(String(e.message).replace(/^Error: /, ''), false); })
+    .quickAdd(form(dry));
+}
+document.getElementById('prev').onclick = function () { run(true); };
+document.getElementById('go').onclick = function () { run(false); };
+</script>
+</body></html>`;
 }
 
 function parseDates(text) {

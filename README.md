@@ -24,7 +24,7 @@ Google Sheet (admin nhập, xuất mẫu)  <──Apps Script──>  Firestore 
 Giao diện nằm trong `docs/`. Vào repo *Settings → Pages* → Source: **Deploy from a branch**, branch `main`, thư mục `/docs`. Địa chỉ sẽ là `https://l2practice.github.io/exams/`. Ghi link vào `webUrl` trong `CauHinh` (nút trong mail).
 
 ## C. Google Sheet + Apps Script
-1. Tạo Sheet mới → **Extensions → Apps Script**; tạo `Code.gs`, `Dialog.html`, `appsscript.json` từ thư mục `apps-script/`.
+1. Tạo Sheet mới → **Extensions → Apps Script**; dán toàn bộ `apps-script/Code.gs` vào file `Code.gs`, và `apps-script/appsscript.json` vào `appsscript.json` (bật *Project Settings → Show "appsscript.json" manifest file*). Chỉ cần 2 file này, không tạo thêm file nào khác.
 2. **Project Settings → Google Cloud Platform project → Change project** → nhập *project number* của Firebase.
 3. Tải lại Sheet → **Gác thi → Tạo các tab cố định**; điền `CauHinh`, `GiaoVien`.
 4. **Gác thi → Cài lịch gửi mail nhắc**; **Gửi thử mail nhắc cho tôi** để xem mail thật.
