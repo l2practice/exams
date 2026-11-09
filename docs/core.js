@@ -21,9 +21,7 @@ export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&a
 export const S = {
   user: null, me: null, cfg: null,
   dots: [], slotsBy: {}, regsBy: {}, roster: [], teachersAll: [], myYear: [],
-  settings: false,
-  l1: "me",                                   // tab cấp 1 (chỉ tổ trưởng): "mg" quản lý | "me" gác thi của tôi
-  l2: { me: "overview", mg: "stats" },         // tab cấp 2 của từng nhóm
+  route: "me:overview",                        // trang đang mở (mục trên thanh bên trái)
   fKhoa: "all", fNganh: "all", gvFilter: "all", openGv: null,
   unsub: [], unsubDots: {},
   render: () => {},                            // app.js gán hàm vẽ lại
@@ -83,10 +81,6 @@ export function toast(msg) {
   const t = $("toast"); t.textContent = msg; t.hidden = false;
   clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 4500);
 }
-
-/** Thanh tab: items = [[giá trị, nhãn]], attr = tên thuộc tính data-… */
-export const tabsHtml = (items, cur, attr) =>
-  items.map(([v, l]) => `<button class="${v === cur ? "on" : ""}" data-${attr}="${esc(v)}">${esc(l)}</button>`).join("");
 
 export const chipsHtml = (items, cur, attr) =>
   items.map(([v, l]) => `<button class="chip ${String(v) === String(cur) ? "on" : ""}" data-${attr}="${esc(v)}">${esc(l)}</button>`).join("");

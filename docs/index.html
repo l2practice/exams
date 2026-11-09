@@ -3,24 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#5661E0">
 <title>Đăng ký gác thi</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="top">
-  <div>
-    <h1>Đăng ký gác thi</h1>
-    <div class="sub" id="termLabel">Khoa Ngoại ngữ · Trường ĐH Đồng Nai</div>
-  </div>
-  <div id="userBox" hidden>
-    <button class="ghost" id="btnSet">Cài đặt</button>
-    <button class="ghost" id="btnOut">Đăng xuất</button>
-  </div>
-</header>
 
-<main>
-  <!-- 1. Trang đầu: đăng nhập -->
-  <section id="login" class="card" hidden>
+<!-- Đăng nhập / từ chối / đang tải -->
+<div id="authWrap" class="aw-auth-wrap">
+  <section id="login" class="aw-auth-card" hidden>
+    <div class="aw-auth-head">
+      <span class="aw-logo-mark" id="authLogo"></span>
+      <h1 class="aw-auth-title">Đăng ký gác thi</h1>
+      <p class="aw-auth-sub">Khoa Ngoại ngữ · Trường ĐH Đồng Nai</p>
+    </div>
     <form id="loginForm" autocomplete="on">
       <label for="email">Email</label>
       <input class="field" id="email" name="email" type="email" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" required>
@@ -35,43 +34,67 @@
     </form>
   </section>
 
-  <section id="denied" class="card center" hidden>
+  <section id="denied" class="aw-auth-card center" hidden>
     <p><b id="deniedEmail"></b><br>không có trong danh sách giảng viên.</p>
     <p>Hãy đăng nhập bằng email khác, hoặc liên hệ thư ký khoa để được thêm.</p>
     <button id="btnOut2">Đăng xuất</button>
   </section>
 
-  <!-- 2. Sau đăng nhập: giao diện theo vai trò (do app.js dựng) -->
-  <section id="app" hidden>
-    <div id="pwBanner" class="banner" hidden>
-      Bạn đang dùng mật khẩu do khoa cấp. Nên đổi mật khẩu để người khác không đăng ký thay bạn.
-      <button class="primary" id="btnPwNow">Đổi mật khẩu ngay</button>
-    </div>
-
-    <section id="settings" class="card" hidden>
-      <h2>Cài đặt – đổi mật khẩu</h2>
-      <form id="pwForm" autocomplete="off">
-        <label for="curPw">Mật khẩu hiện tại</label>
-        <input class="field" id="curPw" type="password" autocomplete="current-password" required>
-        <label for="newPw">Mật khẩu mới (từ 6 ký tự)</label>
-        <input class="field" id="newPw" type="password" autocomplete="new-password" minlength="6" required>
-        <label for="newPw2">Nhập lại mật khẩu mới</label>
-        <input class="field" id="newPw2" type="password" autocomplete="new-password" minlength="6" required>
-        <div class="err" id="pwErr" role="alert"></div>
-        <div class="two">
-          <button class="primary" type="submit">Lưu mật khẩu mới</button>
-          <button type="button" id="btnSetClose">Đóng</button>
-        </div>
-      </form>
-    </section>
-
-    <div id="nav1" class="tabs level1" hidden></div>   <!-- tổ trưởng: Quản lý | Gác thi của tôi -->
-    <div id="nav2" class="tabs"></div>                  <!-- thẻ con -->
-    <div id="page"></div>
-  </section>
-
   <div id="loading" class="center muted">Đang tải…</div>
-</main>
+</div>
+
+<!-- Sau đăng nhập: thanh biểu tượng bên trái + thanh tiêu đề (giống ArticuWrite) -->
+<div id="app" class="aw-shell" hidden>
+  <aside class="aw-side" id="awSide">
+    <a class="aw-logo" href="#" aria-label="Đăng ký gác thi"><span class="aw-logo-mark" id="railLogo"></span></a>
+    <nav id="awNav" aria-label="Điều hướng"></nav>
+    <div class="aw-side-foot">
+      <div class="aw-avatar" id="awAvatar"></div>
+      <button class="aw-nav" id="btnOut" title="Đăng xuất"><span id="icLogout"></span><span>Thoát</span></button>
+    </div>
+  </aside>
+
+  <div class="aw-main">
+    <header class="aw-topbar">
+      <button class="aw-menu-btn" id="awMenuBtn" aria-label="Mở menu"></button>
+      <div>
+        <div class="aw-eyebrow" id="awEyebrow"></div>
+        <h1 class="aw-page-title" id="awPageTitle"></h1>
+      </div>
+      <div class="aw-topbar-right">
+        <div class="aw-user"><div class="aw-avatar" id="awAvatar2"></div>
+          <div><div class="aw-user-name" id="awUserName"></div><div class="aw-user-role" id="awUserRole"></div></div></div>
+      </div>
+    </header>
+
+    <main class="aw-content" id="awContent">
+      <div id="pwBanner" class="banner" hidden>
+        Bạn đang dùng mật khẩu do khoa cấp. Nên đổi mật khẩu để người khác không đăng ký thay bạn.
+        <button class="primary" id="btnPwNow">Đổi mật khẩu ngay</button>
+      </div>
+
+      <section id="settings" class="card" hidden>
+        <h2>Đổi mật khẩu</h2>
+        <form id="pwForm" autocomplete="off">
+          <label for="curPw">Mật khẩu hiện tại</label>
+          <input class="field" id="curPw" type="password" autocomplete="current-password" required>
+          <label for="newPw">Mật khẩu mới (từ 6 ký tự)</label>
+          <input class="field" id="newPw" type="password" autocomplete="new-password" minlength="6" required>
+          <label for="newPw2">Nhập lại mật khẩu mới</label>
+          <input class="field" id="newPw2" type="password" autocomplete="new-password" minlength="6" required>
+          <div class="err" id="pwErr" role="alert"></div>
+          <div class="two">
+            <button class="primary" type="submit">Lưu mật khẩu mới</button>
+            <button type="button" id="btnSetClose">Quay lại</button>
+          </div>
+        </form>
+      </section>
+
+      <div id="page"></div>
+    </main>
+  </div>
+</div>
+
 <div id="toast" hidden></div>
 <script type="module" src="app.js"></script>
 </body>

@@ -8,8 +8,9 @@ import { doc, getDoc, updateDoc, collection, query, where, onSnapshot, writeBatc
 import { resetUrl } from "./firebase-config.js";
 import {
   auth, db, S, $, esc, toast, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, dmyOf, fmtLong, todayIso, khoaNam,
-  isManager, statusOf, isRegOpen, STATUS_LABEL, needOf, visibleSlots, findSlot, tabsHtml, chipsHtml,
+  isManager, statusOf, isRegOpen, STATUS_LABEL, needOf, visibleSlots, findSlot, chipsHtml, manageTos,
 } from "./core.js";
+import { IC, LOGO, icon } from "./icons.js";
 import { statsHtml, addHtml, refreshAddList, manageClick } from "./manage.js";
 
 // =====================================================================  Đăng nhập
@@ -31,9 +32,13 @@ const authMsg = (code) => ({
 }[code] || "Có lỗi xảy ra, hãy thử lại. (" + code + ")");
 
 function show(id) {
-  for (const x of ["login", "denied", "app", "loading"]) $(x).hidden = x !== id;
-  $("userBox").hidden = !S.user;
+  for (const x of ["login", "denied", "loading"]) $(x).hidden = x !== id;
+  $("authWrap").hidden = id === "app";
+  $("app").hidden = id !== "app";
 }
+// biểu tượng cố định
+$("authLogo").innerHTML = LOGO; $("railLogo").innerHTML = LOGO;
+$("icLogout").innerHTML = IC.logout; $("awMenuBtn").innerHTML = IC.menu;
 
 $("email").value = store.get(EMAIL_KEY);                // ô email luôn nhớ email lần trước
 $("showPw").onchange = (e) => ($("pw").type = e.target.checked ? "text" : "password");
@@ -66,13 +71,18 @@ $("btnForgot").onclick = async () => {
   finally { $("btnForgot").disabled = false; }
 };
 
-$("btnOut").onclick = $("btnOut2").onclick = () => { S.settings = false; signOut(auth); };
+$("btnOut").onclick = $("btnOut2").onclick = () => signOut(auth);
 
-// Cài đặt: đổi mật khẩu
-const openSettings = (v) => { S.settings = v; S.render(); if (v) $("settings").scrollIntoView({ behavior: "smooth" }); };
-$("btnSet").onclick = () => openSettings(!S.settings);
-$("btnSetClose").onclick = () => openSettings(false);
-$("btnPwNow").onclick = () => openSettings(true);
+// Cài đặt: đổi mật khẩu (một trang riêng trên thanh bên trái)
+const defaultRoute = () => (isManager() ? "mg:stats" : "me:overview");
+function go(route) {
+  S.route = route;
+  $("awSide").classList.remove("open");
+  render();
+  window.scrollTo({ top: 0 });
+}
+$("btnSetClose").onclick = () => go(defaultRoute());
+$("btnPwNow").onclick = () => go("settings");
 $("pwForm").onsubmit = async (e) => {
   e.preventDefault();
   const cur = $("curPw").value, n1 = $("newPw").value, n2 = $("newPw2").value;
@@ -84,7 +94,7 @@ $("pwForm").onsubmit = async (e) => {
     await updatePassword(auth.currentUser, n1);
     S.me.pwTemp = false;
     updateDoc(doc(db, "teachers", S.me.email), { pwTemp: false }).catch(() => {});   // tắt nhắc đổi mật khẩu
-    $("pwForm").reset(); openSettings(false);
+    $("pwForm").reset(); go(defaultRoute());
     toast("Đã đổi mật khẩu.");
   } catch (err) { $("pwErr").textContent = err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" ? "Mật khẩu hiện tại chưa đúng." : authMsg(err.code); }
 };
@@ -126,7 +136,7 @@ onAuthStateChanged(auth, async (u) => {
     S.myYear = qs.docs.map((d) => ({ id: d.id, ...d.data() }));
     S.render();
   }));
-  S.l1 = isManager() ? "mg" : "me";                 // tổ trưởng mở vào trang Quản lý trước
+  S.route = defaultRoute();                         // tổ trưởng mở vào trang Quản lý trước
   show("app");
   S.render();
 });
@@ -147,33 +157,54 @@ function subscribeDot(id) {
 const dotOf = (s) => S.dots.find((d) => d.id === s.dotId);
 const openFirst = (a, b) => (isRegOpen(b) - isRegOpen(a)) || (b.order || 0) - (a.order || 0);
 
+const ROUTES = {
+  "mg:stats":    { label: "Thống kê", title: "Thống kê giảng viên", icon: "progress" },
+  "mg:add":      { label: "Thêm ca", title: "Thêm ca thi mới", icon: "calendarPlus" },
+  "me:overview": { label: "Tổng quan", title: "Tổng quan của tôi", icon: "overview" },
+  "me:register": { label: "Đăng ký", title: "Đăng ký ca thi", icon: "tasks" },
+  "settings":    { label: "Cài đặt", title: "Cài đặt", icon: "settings" },
+};
+/** Các mục trên thanh bên trái; tổ trưởng có thêm nhóm "Quản lý". */
+const navKeys = () => (isManager() ? [["Quản lý"], "mg:stats", "mg:add", ["Cá nhân"]] : []).concat(["me:overview", "me:register", "settings"]);
+const initials = (n) => String(n || "?").trim().split(/\s+/).slice(-2).map((w) => w[0] || "").join("").toUpperCase();
+const roleLabel = () => (S.me.admin ? "Quản trị toàn khoa" : S.me.leadTo ? `Tổ trưởng ${TO_SHORT[S.me.leadTo]}` : `Giảng viên · ${TO_SHORT[S.me.to] || ""}`);
+const scopeText = () => (S.me.admin ? "Toàn khoa" : `Tổ ${TO_LABEL[S.me.leadTo]}`);
+
 function render() {
   if (!S.me || !S.cfg || $("app").hidden) return;
   const mgr = isManager();
-  if (!mgr) S.l1 = "me";
-  $("pwBanner").hidden = !S.me.pwTemp || S.settings;
-  $("settings").hidden = !S.settings;
-  $("termLabel").textContent = "Khoa Ngoại ngữ · Năm học " + (S.cfg.namHoc || "");
+  if (!ROUTES[S.route] || (S.route.startsWith("mg:") && !mgr)) S.route = defaultRoute();
+  const r = ROUTES[S.route];
 
-  $("nav1").hidden = !mgr;                                                   // tổ trưởng có thêm tab "Quản lý"
-  if (mgr) $("nav1").innerHTML = tabsHtml([["mg", "Quản lý"], ["me", "Gác thi của tôi"]], S.l1, "n1");
-  const items = S.l1 === "mg" ? [["stats", "Thống kê giảng viên"], ["add", "Thêm ca thi mới"]] : [["overview", "Tổng quan của tôi"], ["register", "Đăng ký ca thi"]];
-  $("nav2").innerHTML = tabsHtml(items, S.l2[S.l1], "n2");
+  // thanh bên trái + tiêu đề
+  $("awNav").innerHTML = navKeys().map((k) => Array.isArray(k)
+    ? `<div class="aw-nav-group">${esc(k[0])}</div>`
+    : `<button class="aw-nav ${k === S.route ? "active" : ""}" data-nav="${k}" ${k === S.route ? 'aria-current="page"' : ""}>${icon(ROUTES[k].icon)}<span>${esc(ROUTES[k].label)}</span></button>`).join("");
+  $("awPageTitle").textContent = r.title;
+  $("awEyebrow").textContent = S.route.startsWith("mg:") ? `Quản lý · ${scopeText()}` : S.route === "settings" ? S.me.email : `Năm học ${S.cfg.namHoc || ""}`;
+  $("awAvatar").textContent = $("awAvatar2").textContent = initials(S.me.name);
+  $("awUserName").textContent = S.me.name || S.me.email;
+  $("awUserRole").textContent = roleLabel();
+  $("pwBanner").hidden = !S.me.pwTemp || S.route === "settings";
+  $("settings").hidden = S.route !== "settings";
+  $("page").hidden = S.route === "settings";
+  if (S.route === "settings") return;
 
-  const key = `${S.l1}:${S.l2[S.l1]}`, page = $("page");
-  if (key === "mg:add") {                         // trang có ô nhập: không vẽ lại cả trang khi dữ liệu realtime đổi
+  const page = $("page");
+  if (S.route === "mg:add") {                     // trang có ô nhập: không vẽ lại cả trang khi dữ liệu realtime đổi
     if (!$("addForm")) page.innerHTML = addHtml();
     refreshAddList();
     return;
   }
   const scroll = [...page.querySelectorAll(".tbl-wrap")].map((w) => [w.scrollLeft, w.scrollTop]);
-  page.innerHTML = key === "mg:stats" ? statsHtml() : key === "me:overview" ? overviewMeHtml() : registerHtml();
+  page.innerHTML = S.route === "mg:stats" ? statsHtml() : S.route === "me:overview" ? overviewMeHtml() : registerHtml();
   page.querySelectorAll(".tbl-wrap").forEach((w, i) => { if (scroll[i]) { w.scrollLeft = scroll[i][0]; w.scrollTop = scroll[i][1]; } });
 }
 S.render = render;
 
-$("nav1").onclick = (e) => { const b = e.target.closest("[data-n1]"); if (b) { S.l1 = b.dataset.n1; render(); } };
-$("nav2").onclick = (e) => { const b = e.target.closest("[data-n2]"); if (b) { S.l2[S.l1] = b.dataset.n2; render(); } };
+$("awNav").onclick = (e) => { const b = e.target.closest("[data-nav]"); if (b) go(b.dataset.nav); };
+$("awMenuBtn").onclick = () => $("awSide").classList.toggle("open");           // điện thoại: mở / đóng thanh bên
+$("awContent").onclick = () => $("awSide").classList.remove("open");
 $("page").onchange = (e) => { if (e.target.id === "addDot") refreshAddList(); };
 $("page").onclick = (e) => {
   if (manageClick(e)) return;

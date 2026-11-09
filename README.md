@@ -12,14 +12,17 @@ Google Sheet (admin)                      Firestore                         Web 
 
 | Cột E | Vai trò | Thấy gì trên web |
 |---|---|---|
-| (trống) | Tổ viên | 2 thẻ: **Tổng quan của tôi** · **Đăng ký ca thi** |
-| `tt1` | Tổ trưởng tổ Chuyên 1 (SPA) | Tab **Quản lý** (Thống kê giảng viên · Thêm ca thi mới) + tab **Gác thi của tôi** (như tổ viên) |
+| (trống) | Tổ viên | **Tổng quan** · **Đăng ký** |
+| `tt1` | Tổ trưởng tổ Chuyên 1 (SPA) | Nhóm **Quản lý** (Thống kê · Thêm ca) + nhóm **Cá nhân** (Tổng quan · Đăng ký, như tổ viên) |
 | `tt2` | Tổ trưởng tổ Chuyên 2 (NNA) | như trên, chỉ với tổ 2 |
 | `tt3` | Tổ trưởng tổ Cơ bản | như trên, chỉ với tổ 3 |
 | `x` | Quản trị toàn khoa (tuỳ chọn) | như tổ trưởng nhưng cả 3 tổ |
 
 Tổ trưởng chỉ thấy giảng viên của tổ mình và chỉ sửa được số giảng viên cần **của tổ mình**. Firestore rules ép đúng như vậy.
 Cột C (Tổ) là tổ mà GV thuộc về, dùng để đăng ký ca; tổ trưởng cũng đăng ký gác thi như mọi người.
+
+### Giao diện
+Theo hệ thiết kế **ArticuWrite** (repo `l2practice/artwrite`): nền tím nhạt, thanh biểu tượng bên trái (biểu tượng trên chữ, mục đang chọn tô màu periwinkle), thanh tiêu đề có thẻ người dùng, thẻ trắng bóng nhẹ, nút dạng viên thuốc, font Be Vietnam Pro. Trên điện thoại, thanh bên thành **ngăn kéo** mở bằng nút ☰ ở góc trái. Biểu tượng nằm trong `docs/icons.js`, logo và favicon là `docs/icon.svg`. Chữ cỡ lớn hơn ArticuWrite một chút vì nhiều giảng viên lớn tuổi.
 
 ## 2. Đợt thi: 3 trạng thái (tab `Dot`, cột D)
 
