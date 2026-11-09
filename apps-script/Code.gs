@@ -1,36 +1,37 @@
 /**
  * Đăng ký gác thi – Khoa Ngoại ngữ ĐH Đồng Nai
- * Sheet = nơi admin nhập liệu + xuất mẫu.  Firestore = nơi GV đăng ký (nhanh, realtime).
  *
- * Tab cố định : CauHinh | GiaoVien | Dot | NhatKyNhac
- * Mỗi đợt thi : CaThi_<mã> (nhập lịch) | DangKy_<mã> (tự sinh) | XuatMau_<mã> (tự sinh)
+ * Phân vai:
+ *  - Google Sheet (admin): danh sách GV + vai trò, các đợt thi, cấu hình, xuất MẪU nộp, mail nhắc.
+ *  - Web (tổ trưởng / GV): tổ trưởng THÊM CA THI trực tiếp trên web; GV đăng ký. Dữ liệu nằm ở Firestore.
+ *
+ * Tab: CauHinh | GiaoVien | Dot | NhatKyNhac (cố định);  DangKy_<mã> | XuatMau_<mã> (tự sinh theo đợt)
+ * Cột E của GiaoVien: tt1 / tt2 / tt3 = tổ trưởng của tổ Chuyên 1 / Chuyên 2 / Cơ bản; x = quản trị toàn khoa; trống = tổ viên.
  */
 const SH = { CFG: 'CauHinh', GV: 'GiaoVien', DOT: 'Dot', LOG: 'NhatKyNhac' };
-const TAB = { CA: 'CaThi_', REG: 'DangKy_', OUT: 'XuatMau_' };
+const TAB = { REG: 'DangKy_', OUT: 'XuatMau_' };
 const TO_LABEL = { 1: 'Chuyên 1', 2: 'Chuyên 2', 3: 'Cơ bản' }; // 1 = tổ SPA, 2 = tổ NNA, 3 = tổ Cơ bản
 const NGANH = ['SPA', 'NNA'];
 const TZ = 'Asia/Ho_Chi_Minh';
 // [giờ bắt đầu, giờ CBCT có mặt tại HĐ thi] – sửa trong tab CauHinh, đây chỉ là mặc định
 const CA_DEFAULT = { 1: ['07:30', '07:15'], 2: ['09:00', '08:45'], 3: ['13:30', '13:15'], 4: ['15:00', '14:45'] };
-const CA_HEADERS = ['Mã ca (tự sinh)', 'Ngày', 'Ca', 'Khoá', 'Ngành', 'Môn thi', 'Cần Chuyên 1 (SPA)', 'Cần Chuyên 2 (NNA)', 'Cần Cơ bản', 'Ghi chú', 'Kiểm tra'];
-const DOT_HEADERS = ['Mã đợt', 'Tên đợt thi', 'Học kỳ (in trên mẫu)', 'Mở đăng ký (TRUE/FALSE)', 'Hạn chót đăng ký', 'Ghi chú'];
+const DOT_HEADERS = ['Mã đợt', 'Tên đợt thi', 'Học kỳ (in trên mẫu)', 'Trạng thái (SOAN / MO / DONG)', 'Hạn chót đăng ký', 'Ghi chú', 'Năm học'];
+const DOT_STATUS = ['SOAN', 'MO', 'DONG']; // SOAN: tổ trưởng soạn lịch, GV chưa đăng ký được · MO: GV đăng ký · DONG: khoá
+const MAX_RESET_PER_DAY = 80;
 
 // ---------------------------------------------------------------- Menu
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Gác thi')
     .addItem('0. Tạo đợt thi mới…', 'menuNewDot')
+    .addItem('1. Đồng bộ lên Firebase (GV, vai trò, đợt thi)', 'menuSyncUp')
     .addSeparator()
-    .addItem('1. Thêm ca nhanh (ngày × ca × khoá × ngành)…', 'showQuickAdd')
-    .addItem('2. Kiểm tra dữ liệu', 'menuCheck')
-    .addItem('3. Đồng bộ lên Firebase (mở cho GV đăng ký)', 'menuSyncUp')
-    .addSeparator()
-    .addItem('4. Kéo đăng ký về Sheet + Xuất MẪU nộp', 'menuExport')
-    .addItem('5. Lưu file .xlsx vào Drive', 'menuXlsx')
+    .addItem('2. Kéo đăng ký về Sheet + Xuất MẪU nộp', 'menuExport')
+    .addItem('3. Lưu file .xlsx vào Drive', 'menuXlsx')
     .addSeparator()
     .addItem('Tạo tài khoản đăng nhập cho GV (mật khẩu mặc định)', 'menuAccounts')
     .addItem('Gửi thử mail nhắc cho tôi', 'menuTestMail')
     .addItem('Cài lịch gửi mail nhắc (mỗi giờ)', 'installTriggers')
-    .addItem('Tạo các tab cố định (chạy lần đầu)', 'setupSheets')
+    .addItem('Tạo / cập nhật các tab cố định', 'setupSheets')
     .addToUi();
 }
 
@@ -47,10 +48,10 @@ function setupSheets() {
       ['namHoc', '2026-2027', 'Năm học: số ca được cộng dồn trong năm học này, qua mọi đợt'],
       ['toiThieu', '20', 'Số ca tối thiểu/năm học'],
       ['coSo', 'cơ sở 1', 'Địa điểm coi thi (in trên mẫu và trong mail)'],
-      ['khoaHopLe', '13,14,15,16', 'Các khoá đang học'],
+      ['khoaHopLe', '13,14,15,16', 'Các khoá đang học (hiện trong form thêm ca trên web)'],
       ['khoaNam1', '16', 'Khoá đang học năm 1 (16 → năm 1, 15 → năm 2…)'],
       ['nhacTruocGio', '18', 'Gửi mail nhắc trước giờ CÓ MẶT bao nhiêu giờ'],
-      ['tenNguoiGui', 'Khoa Ngoại ngữ - ĐH Đồng Nai', 'Tên hiển thị khi gửi mail'],
+      ['tenNguoiGui', 'Khoa Ngoại ngữ - ĐH Đồng Nai', 'Tên hiển thị khi gửi mail (nếu GV chưa có tổ trưởng)'],
       ['webUrl', '', 'Link web đăng ký (nút trong mail)'],
       ['matKhauMacDinh', 'chuyen1', 'Mật khẩu mặc định khi tạo tài khoản cho GV (GV tự đổi trong Cài đặt trên web; tối thiểu 6 ký tự)'],
     ];
@@ -65,21 +66,18 @@ function setupSheets() {
   }
 
   const gv = get(SH.GV);
-  if (gv.getLastRow() < 1) {
-    gv.getRange(1, 1, 1, 4).setValues([['Email', 'Họ tên', 'Tổ (1=SPA, 2=NNA, 3=Cơ bản)', 'Số ca đã gác trước khi dùng app (cộng dồn trong năm học)']]).setFontWeight('bold');
-    gv.setFrozenRows(1);
-  }
-  gv.getRange('E1').setValue('Vai trò quản lý: x = toàn khoa, tt = tổ trưởng (xem tổ mình)').setFontWeight('bold');
+  gv.getRange(1, 1, 1, 5).setValues([['Email', 'Họ tên', 'Tổ (1=SPA, 2=NNA, 3=Cơ bản)', 'Số ca đã gác trước khi dùng app (cộng dồn trong năm học)', 'Vai trò (tt1, tt2, tt3 = tổ trưởng; x = quản trị toàn khoa; trống = tổ viên)']]).setFontWeight('bold');
+  gv.setFrozenRows(1);
   gv.getRange('C2:C500').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['1', '2', '3'], true).build());
   gv.getRange('D2:D500').setDataValidation(SpreadsheetApp.newDataValidation().requireNumberGreaterThanOrEqualTo(0).build());
+  gv.getRange('E2:E500').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['tt1', 'tt2', 'tt3', 'x'], true).setAllowInvalid(false).build());
 
   const dot = get(SH.DOT);
-  if (dot.getLastRow() < 1) {
-    dot.getRange(1, 1, 1, DOT_HEADERS.length).setValues([DOT_HEADERS]).setFontWeight('bold');
-    dot.setFrozenRows(1); dot.setColumnWidths(1, DOT_HEADERS.length, 170);
-    dot.getRange('E2:E100').setNumberFormat('dd/MM/yyyy HH:mm');
-  }
-  ss.toast('Đã tạo tab. Điền CauHinh và GiaoVien, rồi dùng "Tạo đợt thi mới".');
+  dot.getRange(1, 1, 1, DOT_HEADERS.length).setValues([DOT_HEADERS]).setFontWeight('bold');
+  dot.setFrozenRows(1); dot.setColumnWidths(1, DOT_HEADERS.length, 170);
+  dot.getRange('D2:D100').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(DOT_STATUS, true).setAllowInvalid(false).build());
+  dot.getRange('E2:E100').setNumberFormat('dd/MM/yyyy HH:mm');
+  ss.toast('Đã tạo/cập nhật tab. Điền CauHinh và GiaoVien, rồi dùng "0. Tạo đợt thi mới".');
 }
 
 const hhmm = (v) => (v instanceof Date ? Utilities.formatDate(v, TZ, 'HH:mm') : String(v || '').trim());
@@ -103,44 +101,30 @@ function getCfg() {
 function readDots() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SH.DOT);
   if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues()
-    .map((r, i) => ({ order: i + 1, ma: String(r[0]).trim(), ten: String(r[1]).trim(), hocKy: String(r[2] || r[1]).trim(), open: String(r[3]).toUpperCase() === 'TRUE', hanChot: r[4] instanceof Date ? r[4] : null }))
-    .filter((d) => d.ma);
+  const namHoc = getCfg().namHoc;
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 7).getValues().map((r, i) => {
+    let st = String(r[3]).trim().toUpperCase();
+    if (st === 'TRUE') st = 'MO'; else if (st === 'FALSE') st = 'DONG'; else if (!DOT_STATUS.includes(st)) st = 'SOAN';
+    return { order: i + 1, ma: String(r[0]).trim(), ten: String(r[1]).trim(), hocKy: String(r[2] || r[1]).trim(), status: st, hanChot: r[4] instanceof Date ? r[4] : null, namHoc: String(r[6] || namHoc).trim() };
+  }).filter((d) => d.ma);
 }
 function getDot(ma) {
   const d = readDots().find((x) => x.ma === ma);
   if (!d) throw new Error(`Không thấy đợt "${ma}" trong tab Dot.`);
   return d;
 }
-const caSheet = (ma) => {
-  const sh = SpreadsheetApp.getActive().getSheetByName(TAB.CA + ma);
-  if (!sh) throw new Error(`Không thấy tab ${TAB.CA}${ma}.`);
-  return sh;
-};
-/** Đợt đang làm = đợt của tab đang mở (CaThi_x / DangKy_x / XuatMau_x); nếu chỉ có 1 đợt thì lấy luôn. */
+/** Đợt đang làm = đợt của tab đang mở (DangKy_x / XuatMau_x); chỉ có 1 đợt thì lấy luôn; nếu không thì hỏi mã đợt. */
 function pickDot() {
-  const m = SpreadsheetApp.getActiveSheet().getName().match(/^(?:CaThi_|DangKy_|XuatMau_)(.+)$/);
+  const m = SpreadsheetApp.getActiveSheet().getName().match(/^(?:DangKy_|XuatMau_)(.+)$/);
   const dots = readDots();
   if (m && dots.some((d) => d.ma === m[1])) return m[1];
   if (dots.length === 1) return dots[0].ma;
-  throw new Error('Hãy mở tab của đợt thi cần làm (ví dụ CaThi_HK3-2526) rồi chạy lại menu.');
-}
-
-function createCaTab(ma) {
-  const ss = SpreadsheetApp.getActive();
-  const ca = ss.insertSheet(TAB.CA + ma);
-  ca.getRange(1, 1, 1, CA_HEADERS.length).setValues([CA_HEADERS]).setFontWeight('bold');
-  ca.setFrozenRows(1);
-  const rule = (list) => SpreadsheetApp.newDataValidation().requireValueInList(list, true).setAllowInvalid(false).build();
-  ca.getRange('B2:B2000').setDataValidation(SpreadsheetApp.newDataValidation().requireDate().build()).setNumberFormat('dd/MM/yyyy');
-  ca.getRange('C2:E2000').setNumberFormat('@');
-  ca.getRange('C2:C2000').setDataValidation(rule(['1', '2', '3', '4']));
-  ca.getRange('D2:D2000').setDataValidation(rule(getCfg().khoaHopLe.split(',').map((s) => s.trim())));
-  ca.getRange('E2:E2000').setDataValidation(rule(NGANH));
-  ca.getRange('G2:I2000').setDataValidation(SpreadsheetApp.newDataValidation().requireNumberBetween(0, 20).build());
-  ca.getRange('A:A').setFontColor('#888');
-  ca.setColumnWidth(1, 190); ca.setColumnWidth(6, 220); ca.setColumnWidth(11, 260);
-  return ca;
+  const ui = SpreadsheetApp.getUi();
+  const r = ui.prompt('Chọn đợt thi', 'Nhập mã đợt: ' + dots.map((d) => d.ma).join(', '), ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) throw new Error('Đã huỷ.');
+  const ma = r.getResponseText().trim();
+  getDot(ma);
+  return ma;
 }
 
 function menuNewDot() {
@@ -149,14 +133,12 @@ function menuNewDot() {
   if (a.getSelectedButton() !== ui.Button.OK) return;
   const ma = a.getResponseText().trim();
   if (!/^[A-Za-z0-9-]{2,30}$/.test(ma)) return ui.alert('Mã đợt chỉ gồm chữ không dấu, số và dấu "-", dài 2–30 ký tự.');
-  if (readDots().some((d) => d.ma === ma) || SpreadsheetApp.getActive().getSheetByName(TAB.CA + ma)) return ui.alert('Mã đợt này đã tồn tại.');
+  if (readDots().some((d) => d.ma === ma)) return ui.alert('Mã đợt này đã tồn tại.');
   const b = ui.prompt('Tên đợt thi', 'Tên in trên mẫu (ví dụ: HỌC KỲ 1 hoặc GIỮA KỲ HỌC KỲ 1):', ui.ButtonSet.OK_CANCEL);
   if (b.getSelectedButton() !== ui.Button.OK) return;
   const ten = b.getResponseText().trim() || ma;
-  const dot = SpreadsheetApp.getActive().getSheetByName(SH.DOT);
-  dot.appendRow([ma, ten, ten.toUpperCase(), 'TRUE', '', '']);
-  SpreadsheetApp.setActiveSheet(createCaTab(ma));
-  ui.alert(`Đã tạo đợt "${ma}". Điền Hạn chót ở tab Dot, rồi dùng "Thêm ca nhanh" ở tab ${TAB.CA}${ma}.`);
+  SpreadsheetApp.getActive().getSheetByName(SH.DOT).appendRow([ma, ten, ten.toUpperCase(), 'SOAN', '', '', getCfg().namHoc]);
+  ui.alert(`Đã tạo đợt "${ma}" ở trạng thái SOAN (soạn lịch).\n\nCác bước tiếp theo:\n1. Điền "Hạn chót đăng ký" ở tab Dot.\n2. Gác thi → Đồng bộ lên Firebase.\n3. Tổ trưởng thêm ca thi trên web.\n4. Khi lịch đã đủ, đổi trạng thái thành MO rồi đồng bộ lại để GV đăng ký.`);
 }
 
 // ---------------------------------------------------------------- Date / id helpers
@@ -180,184 +162,174 @@ const startDate = (cfg, iso, ca) => new Date(`${iso}T${cfg.ca[ca].start}:00+07:0
 const arriveDate = (cfg, iso, ca) => new Date(`${iso}T${cfg.ca[ca].arrive}:00+07:00`);
 const hhmmVN = (s) => s.replace(':', 'h');
 
-// ---------------------------------------------------------------- Đọc & kiểm tra CaThi_<mã>
+// ---------------------------------------------------------------- Ca thi (dữ liệu do tổ trưởng nhập trên web, lưu ở Firestore)
 function readSlots(ma) {
-  const cfg = getCfg();
-  const khoaOK = cfg.khoaHopLe.split(',').map((s) => s.trim());
-  const sh = caSheet(ma);
+  return fsList('slots')
+    .filter((d) => d.dotId === ma && d.active !== false)
+    .map((d) => ({ id: d._id, date: d.date, ca: d.ca, khoa: d.khoa, nganh: d.nganh, mon: d.mon || '', note: d.note || '',
+      need: { t1: (d.need && d.need.t1) || 0, t2: (d.need && d.need.t2) || 0, t3: (d.need && d.need.t3) || 0 } }))
+    .filter((s) => s.need.t1 + s.need.t2 + s.need.t3 > 0);
+}
+
+// ---------------------------------------------------------------- Giáo viên
+function readTeachers() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(SH.GV);
   const last = sh.getLastRow();
-  const rows = last > 1 ? sh.getRange(2, 1, last - 1, 10).getValues() : [];
-  const slots = [], errors = [], seen = {};
-  rows.forEach((r, i) => {
-    if (r.slice(1, 9).every((c) => c === '' || c === null)) return; // dòng trống
-    const rowNo = i + 2, errs = [];
-    const iso = toIso(r[1]), ca = Number(r[2]), khoa = String(r[3]).trim(), nganh = String(r[4]).trim().toUpperCase();
-    const need = [r[6], r[7], r[8]].map((x) => (x === '' ? 0 : Number(x)));
-    if (!iso) errs.push('Ngày sai');
-    if (![1, 2, 3, 4].includes(ca)) errs.push('Ca phải 1-4');
-    if (!khoaOK.includes(khoa)) errs.push('Khoá không hợp lệ');
-    if (!NGANH.includes(nganh)) errs.push('Ngành phải SPA/NNA');
-    if (need.some((x) => !Number.isInteger(x) || x < 0)) errs.push('Số GV cần phải là số nguyên ≥ 0');
-    else if (need.every((x) => x === 0)) errs.push('Chưa nhập số GV cần');
-    let id = null;
-    if (!errs.length) {
-      id = slotId(ma, iso, ca, khoa, nganh);
-      if (seen[id]) errs.push(`Trùng dòng ${seen[id]}`); else seen[id] = rowNo;
-    }
-    if (errs.length) errors.push({ row: rowNo, msg: errs.join('; ') });
-    else slots.push({ row: rowNo, id, date: iso, ca, khoa: Number(khoa), nganh, mon: String(r[5] || '').trim(), need: { t1: need[0], t2: need[1], t3: need[2] }, note: String(r[9] || '').trim() });
+  if (last < 2) return [];
+  return sh.getRange(2, 1, last - 1, 5).getValues()
+    .filter((r) => String(r[0]).trim())
+    .map((r) => {
+      const role = String(r[4] || '').trim().toLowerCase();
+      const m = role.match(/^tt([123])$/);
+      return { email: String(r[0]).trim().toLowerCase(), name: String(r[1]).trim(), to: Number(r[2]), prior: Number(r[3] || 0),
+        leadTo: m ? Number(m[1]) : 0, admin: role === 'x' || role === 'admin' };
+    });
+}
+
+// ---------------------------------------------------------------- Tài khoản đăng nhập (email + mật khẩu)
+function idtFetch(path, body) {
+  const res = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/' + path, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    payload: JSON.stringify(body),
   });
-  return { slots, errors };
+  let json = {}; try { json = JSON.parse(res.getContentText() || '{}'); } catch (e) { /* không phải JSON */ }
+  return { code: res.getResponseCode(), json };
 }
-
-function checkAndMark(ma) {
-  const sh = caSheet(ma);
-  const { slots, errors } = readSlots(ma);
-  const last = Math.max(sh.getLastRow(), 2);
-  sh.getRange(2, 1, last - 1, 11).setBackground(null);
-  sh.getRange(2, 11, last - 1, 1).clearContent();
-  const byRow = {}; slots.forEach((s) => (byRow[s.row] = s.id));
-  sh.getRange(2, 1, last - 1, 1).setValues(Array.from({ length: last - 1 }, (_, i) => [byRow[i + 2] || '']));
-  errors.forEach((e) => {
-    sh.getRange(e.row, 1, 1, 11).setBackground('#fde2e1');
-    sh.getRange(e.row, 11).setValue(e.msg);
+/**
+ * Tạo tài khoản Firebase Auth (email đã xác thực, mật khẩu mặc định) cho GV chưa có.
+ * Không bao giờ đặt lại mật khẩu của tài khoản đã được GV dùng.
+ * Danh sách đã tạo được nhớ trong Script Properties nên các lần đồng bộ sau không gọi lại.
+ */
+function ensureAccounts(teachers) {
+  const cfg = getCfg(), pid = cfg.FIREBASE_PROJECT_ID;
+  const props = PropertiesService.getScriptProperties();
+  const done = new Set(JSON.parse(props.getProperty('acctDone') || '[]'));
+  const out = { created: 0, existing: 0, failed: [], createdEmails: [] };
+  teachers.filter((t) => !done.has(t.email)).forEach((t) => {
+    const r = idtFetch('accounts:signUp', { email: t.email, password: cfg.matKhauMacDinh, emailVerified: true, displayName: t.name, targetProjectId: pid });
+    if (r.code < 300) { out.created++; out.createdEmails.push(t.email); done.add(t.email); return; }
+    const msg = (r.json.error && r.json.error.message) || String(r.code);
+    if (msg.indexOf('EMAIL_EXISTS') === 0) {
+      // Đã có tài khoản. Nếu chưa xác thực email (có thể do người lạ đăng ký trước) thì xác thực lại và đặt về mật khẩu mặc định.
+      const l = idtFetch(`projects/${pid}/accounts:lookup`, { email: [t.email] });
+      const u = l.json.users && l.json.users[0];
+      if (u && !u.emailVerified) {
+        const up = idtFetch(`projects/${pid}/accounts:update`, { localId: u.localId, emailVerified: true, password: cfg.matKhauMacDinh });
+        if (up.code >= 300) { out.failed.push(`${t.email}: không xác thực được (${up.code})`); return; }
+        out.createdEmails.push(t.email);
+      }
+      out.existing++; done.add(t.email);
+    } else out.failed.push(`${t.email}: ${msg}`);
   });
-  return { slots, errors };
+  props.setProperty('acctDone', JSON.stringify(Array.from(done)));
+  return out;
+}
+function menuAccounts() {
+  const r = ensureAccounts(readTeachers());
+  if (r.createdEmails.length) fsCommit(r.createdEmails.map((e) => ({ path: 'teachers/' + e, data: { pwTemp: true } })));
+  SpreadsheetApp.getUi().alert(`Tài khoản: tạo mới ${r.created}, đã có ${r.existing}` + (r.failed.length ? `\n\nLỗi:\n${r.failed.slice(0, 10).join('\n')}` : ''));
 }
 
-function menuCheck() {
-  const { slots, errors } = checkAndMark(pickDot());
-  const ui = SpreadsheetApp.getUi();
-  if (errors.length) ui.alert(`Có ${errors.length} dòng lỗi (tô đỏ, xem cột K):\n\n` + errors.slice(0, 15).map((e) => `Dòng ${e.row}: ${e.msg}`).join('\n'));
-  else ui.alert(`Hợp lệ: ${slots.length} ca.`);
-}
+// ---------------------------------------------------------------- Đồng bộ lên
+/** Đẩy GV + vai trò, các đợt thi và cấu hình lên Firestore. KHÔNG đụng tới ca thi và đăng ký (do web quản lý). */
+function syncUp() {
+  const cfg = getCfg();
+  const dots = readDots();
+  if (!dots.length) throw new Error('Chưa có đợt thi nào. Chạy "0. Tạo đợt thi mới" trước.');
+  const badD = dots.filter((d) => !/^[A-Za-z0-9-]{2,30}$/.test(d.ma));
+  if (badD.length) throw new Error('Mã đợt sai: ' + badD.map((d) => d.ma).join(', '));
+  const teachers = readTeachers();
+  const badT = teachers.filter((t) => !/^[^@\s]+@[^@\s]+$/.test(t.email) || ![1, 2, 3].includes(t.to) || !t.name);
+  if (badT.length) throw new Error('GV thiếu tên / sai email / sai tổ: ' + badT.map((t) => t.email || t.name).join(', '));
 
-// ---------------------------------------------------------------- Nhập nhanh
-function showQuickAdd() {
-  const ma = pickDot();
-  const html = HtmlService.createHtmlOutput(quickAddHtml(ma, getCfg().khoaHopLe.split(',').map((x) => x.trim())))
-    .setWidth(520).setHeight(660);
-  SpreadsheetApp.getUi().showModalDialog(html, `Thêm ca nhanh – đợt ${ma}`);
-}
-
-/** Nội dung hộp thoại "Thêm ca nhanh" – nhúng sẵn trong Code.gs nên không cần tạo file HTML riêng. */
-function quickAddHtml(ma, khoas) {
-  const khoaHtml = khoas.map((k) => `<label><input type="checkbox" name="khoa" value="${esc(k)}"> Khoá ${esc(k)}</label>`).join('');
-  return `<!doctype html>
-<html><head><base target="_top">
-<style>
-  body{font:14px system-ui,sans-serif;margin:14px;color:#1c2430}
-  label.f{display:block;font-weight:600;margin:12px 0 4px}
-  textarea,input[type=text],input[type=number]{width:100%;box-sizing:border-box;padding:6px;font:inherit}
-  .row{display:flex;gap:14px;flex-wrap:wrap}
-  .row label{font-weight:400}
-  .need{display:flex;gap:8px}.need div{flex:1}
-  small{color:#667085}
-  button{padding:8px 14px;font:inherit;margin-right:6px;cursor:pointer}
-  #go{background:#1d5fd6;color:#fff;border:0;border-radius:6px}
-  #msg{margin-top:12px;padding:8px;border-radius:6px;display:none}
-  .ok{background:#e7f6ef;color:#12805c}.err{background:#fde2e1;color:#b42318}
-</style></head>
-<body>
-<label class="f">Ngày <small>(mỗi dòng/dấu phẩy một mục; hỗ trợ khoảng)</small></label>
-<textarea id="dates" rows="3" placeholder="24/07/2026&#10;27/07/2026-31/07/2026"></textarea>
-<label><input type="checkbox" id="skipSun" checked> Bỏ Chủ nhật</label>
-
-<label class="f">Ca <small>(1: 7:30 · 2: 9:00 · 3: 13:30 · 4: 15:00)</small></label>
-<div class="row">
-  <label><input type="checkbox" name="ca" value="1"> Ca 1</label>
-  <label><input type="checkbox" name="ca" value="2"> Ca 2</label>
-  <label><input type="checkbox" name="ca" value="3"> Ca 3</label>
-  <label><input type="checkbox" name="ca" value="4"> Ca 4</label>
-</div>
-
-<label class="f">Khoá</label>
-<div class="row">${khoaHtml}</div>
-
-<label class="f">Ngành</label>
-<div class="row">
-  <label><input type="checkbox" name="nganh" value="SPA"> SPA</label>
-  <label><input type="checkbox" name="nganh" value="NNA"> NNA</label>
-</div>
-
-<label class="f">Môn thi <small>(tuỳ chọn, sửa riêng từng dòng sau)</small></label>
-<input type="text" id="mon">
-
-<label class="f">Số GV cần mỗi ca</label>
-<div class="need">
-  <div>Chuyên 1 (SPA)<input type="number" id="t1" min="0" value="1"></div>
-  <div>Chuyên 2 (NNA)<input type="number" id="t2" min="0" value="1"></div>
-  <div>Cơ bản<input type="number" id="t3" min="0" value="0"></div>
-</div>
-
-<p><button id="prev">Xem trước</button><button id="go">Thêm vào CaThi</button></p>
-<div id="msg"></div>
-
-<script>
-var MA = ${JSON.stringify(ma)};
-function vals(n) { return [].slice.call(document.querySelectorAll('input[name=' + n + ']:checked')).map(function (e) { return e.value; }); }
-function form(dry) {
-  return { ma: MA, dates: document.getElementById('dates').value, skipSun: document.getElementById('skipSun').checked,
-    cas: vals('ca'), khoas: vals('khoa'), nganhs: vals('nganh'), mon: document.getElementById('mon').value,
-    t1: document.getElementById('t1').value, t2: document.getElementById('t2').value, t3: document.getElementById('t3').value, dryRun: dry };
-}
-function say(t, ok) { var m = document.getElementById('msg'); m.style.display = 'block'; m.className = ok ? 'ok' : 'err'; m.textContent = t; }
-function run(dry) {
-  google.script.run
-    .withSuccessHandler(function (r) {
-      say((dry ? 'Sẽ thêm ' : 'Đã thêm ') + r.added + ' ca mới (bỏ qua ' + r.duplicates + ' ca đã có).' + (dry ? '' : ' Có thể thêm đợt tiếp theo.'), true);
-    })
-    .withFailureHandler(function (e) { say(String(e.message).replace(/^Error: /, ''), false); })
-    .quickAdd(form(dry));
-}
-document.getElementById('prev').onclick = function () { run(true); };
-document.getElementById('go').onclick = function () { run(false); };
-</script>
-</body></html>`;
-}
-
-function parseDates(text) {
-  const out = [], bad = [];
-  String(text).split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean).forEach((tok) => {
-    let m = tok.match(/^(\d{1,2})(?:\/(\d{1,2}))?(?:\/(\d{4}))?\s*[-–]\s*(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (m) {
-      const y2 = +m[6], mo2 = +m[5], d2 = +m[4];
-      const d1 = +m[1], mo1 = m[2] ? +m[2] : mo2, y1 = m[3] ? +m[3] : y2;
-      for (let d = new Date(y1, mo1 - 1, d1), end = new Date(y2, mo2 - 1, d2); d <= end; d.setDate(d.getDate() + 1)) out.push(new Date(d));
-      return;
-    }
-    m = tok.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (m) out.push(new Date(+m[3], +m[2] - 1, +m[1])); else bad.push(tok);
+  const writes = [];
+  const far = new Date(Date.now() + 365 * 86400000);
+  dots.forEach((d) => writes.push({ path: 'dots/' + d.ma,
+    data: { name: d.ten, hocKy: d.hocKy, status: d.status, open: d.status === 'MO', deadline: d.hanChot || far, namHoc: d.namHoc, order: d.order } }));
+  teachers.forEach((t, i) => {
+    writes.push({ path: 'teachers/' + t.email, data: { name: t.name, to: t.to, prior: t.prior, admin: t.admin, leadTo: t.leadTo } });
+    // Danh sách công khai cho GV (để vẽ các hàng của bảng): chỉ tên, tổ, thứ tự; số ca cũ (prior) giữ riêng trong teachers
+    writes.push({ path: 'roster/' + t.email, data: { name: t.name, to: t.to, order: i + 1 } });
   });
-  return { dates: out, bad };
+  const caTimes = {}; [1, 2, 3, 4].forEach((c) => (caTimes[c] = cfg.ca[c]));
+  writes.push({ path: 'config/main', data: { namHoc: cfg.namHoc, minCa: cfg.toiThieu, khoaNam1: Number(cfg.khoaNam1 || 0),
+    khoaHopLe: cfg.khoaHopLe.split(',').map((x) => Number(x.trim())).filter(Boolean), caTimes } });
+  fsCommit(writes);
+
+  let acct;
+  try { acct = ensureAccounts(teachers); } catch (e) { acct = { created: 0, existing: 0, failed: [String(e.message || e)], createdEmails: [] }; }
+  // Tài khoản vừa tạo dùng mật khẩu mặc định → đánh dấu để web nhắc GV đổi mật khẩu
+  if (acct.createdEmails.length) fsCommit(acct.createdEmails.map((e) => ({ path: 'teachers/' + e, data: { pwTemp: true } })));
+  return { dots: dots.length, teachers: teachers.length, acct };
+}
+function menuSyncUp() {
+  const r = syncUp(), a = r.acct;
+  SpreadsheetApp.getUi().alert(`Đã đồng bộ ${r.dots} đợt thi và ${r.teachers} giảng viên lên Firebase.\nTài khoản đăng nhập: tạo mới ${a.created}, đã có ${a.existing}.` +
+    (a.failed.length ? `\n\nLỖI tạo tài khoản (dữ liệu khác vẫn đã đồng bộ):\n${a.failed.slice(0, 8).join('\n')}` : ''));
 }
 
-/** f: {ma, dates, skipSun, cas[], khoas[], nganhs[], mon, t1,t2,t3, dryRun} */
-function quickAdd(f) {
-  const { dates, bad } = parseDates(f.dates);
-  if (bad.length) throw new Error('Không hiểu ngày: ' + bad.join(', ') + '\nDạng đúng: 27/07/2026 hoặc 27/07/2026-31/07/2026 (phân tách bằng dấu phẩy hoặc xuống dòng).');
-  const days = dates.filter((d) => !(f.skipSun && d.getDay() === 0));
-  if (!days.length || !f.cas.length || !f.khoas.length || !f.nganhs.length) throw new Error('Chọn ít nhất 1 ngày, 1 ca, 1 khoá, 1 ngành.');
-  const need = [f.t1, f.t2, f.t3].map((x) => Number(x || 0));
-  if (need.every((x) => x === 0)) throw new Error('Nhập số GV cần cho ít nhất 1 tổ.');
+// ---------------------------------------------------------------- Quên mật khẩu (web gọi vào Web App của script này)
+/**
+ * Triển khai: Deploy → New deployment → Web app → Execute as: Me, Who has access: Anyone.
+ * Web gửi POST {action:'reset', email}. Luôn trả {ok:true} dù email có trong danh sách hay không (không lộ danh sách GV).
+ * Mật khẩu mới được ĐẶT trực tiếp trong Firebase Auth và gửi qua mail tới chính email đó, từ tài khoản chạy script.
+ */
+function doGet() { return ContentService.createTextOutput('OK'); }
+function doPost(e) {
+  const out = (o) => ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+  try {
+    const req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    if (req.action === 'reset') return out(resetPassword(String(req.email || '').trim().toLowerCase()));
+    return out({ ok: false, error: 'unknown action' });
+  } catch (err) { return out({ ok: false, error: 'bad request' }); }
+}
+function randomPassword(n) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'; // bỏ ký tự dễ nhầm: 0 O 1 l I
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Math.random() + Date.now());
+  let s = '';
+  for (let i = 0; i < n; i++) s += alphabet[(bytes[i] & 255) % alphabet.length];
+  return s;
+}
+function resetPassword(email) {
+  if (!/^[^@\s]+@[^@\s]+$/.test(email)) return { ok: true };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const cache = CacheService.getScriptCache();
+    if (cache.get('rst:' + email)) return { ok: true };                       // tối đa 1 lần / 10 phút / email
+    const props = PropertiesService.getScriptProperties();
+    const day = Utilities.formatDate(new Date(), TZ, 'yyyyMMdd');
+    const [d0, c0] = String(props.getProperty('rstDay') || '').split(':');
+    const count = d0 === day ? Number(c0) : 0;
+    if (count >= MAX_RESET_PER_DAY) return { ok: false, error: 'limit' };     // chặn spam làm cạn hạn mức mail
+    const t = readTeachers().find((x) => x.email === email);
+    if (!t) return { ok: true };
+    cache.put('rst:' + email, '1', 600);
+    props.setProperty('rstDay', day + ':' + (count + 1));
 
-  const sh = caSheet(f.ma);
-  const existing = new Set(readSlots(f.ma).slots.map((s) => s.id));
-  const rows = [];
-  let dup = 0;
-  days.forEach((d) => f.cas.forEach((ca) => f.khoas.forEach((k) => f.nganhs.forEach((ng) => {
-    const id = slotId(f.ma, toIso(d), +ca, k, ng);
-    if (existing.has(id)) { dup++; return; }
-    existing.add(id);
-    rows.push([id, d, String(ca), String(k), ng, f.mon || '', need[0], need[1], need[2], '', '']);
-  }))));
-  if (!f.dryRun && rows.length) {
-    const start = Math.max(sh.getLastRow(), 1) + 1;
-    sh.getRange(start, 3, rows.length, 3).setNumberFormat('@');
-    sh.getRange(start, 2, rows.length, 1).setNumberFormat('dd/MM/yyyy');
-    sh.getRange(start, 1, rows.length, 11).setValues(rows);
-  }
-  return { added: rows.length, duplicates: dup };
+    const cfg = getCfg(), pid = cfg.FIREBASE_PROJECT_ID, pw = randomPassword(10);
+    const l = idtFetch(`projects/${pid}/accounts:lookup`, { email: [email] });
+    const u = l.json.users && l.json.users[0];
+    const r = u
+      ? idtFetch(`projects/${pid}/accounts:update`, { localId: u.localId, password: pw, emailVerified: true })
+      : idtFetch('accounts:signUp', { email, password: pw, emailVerified: true, displayName: t.name, targetProjectId: pid });
+    if (r.code >= 300) return { ok: false, error: 'auth' };
+    fsCommit([{ path: 'teachers/' + email, data: { name: t.name, to: t.to, prior: t.prior, admin: t.admin, leadTo: t.leadTo, pwTemp: true } }]);
+
+    const link = cfg.webUrl ? `<p><a href="${esc(cfg.webUrl)}" style="color:#1b5ed8;font-weight:bold">Mở trang đăng ký gác thi</a></p>` : '';
+    MailApp.sendEmail({
+      to: email, name: cfg.tenNguoiGui, subject: 'Mật khẩu mới cho hệ thống đăng ký gác thi',
+      body: `Chào ${t.name},\n\nMật khẩu mới của thầy/cô: ${pw}\n\nHãy đăng nhập bằng email này và mật khẩu trên, rồi vào Cài đặt để đổi mật khẩu.\nNếu thầy/cô không yêu cầu, hãy báo cho khoa.\n\n${cfg.tenNguoiGui}`,
+      htmlBody: `<div style="font-family:Arial,sans-serif;font-size:17px;line-height:1.5;color:#18202c"><p>Chào <b>${esc(t.name)}</b>,</p>` +
+        `<p>Mật khẩu mới của thầy/cô để đăng nhập hệ thống đăng ký gác thi:</p>` +
+        `<p style="font-size:26px;font-weight:700;letter-spacing:2px;background:#f3f5f9;border-radius:10px;padding:14px 18px;display:inline-block">${esc(pw)}</p>` +
+        `<p>Hãy đăng nhập bằng email này, sau đó vào <b>Cài đặt</b> để đổi sang mật khẩu của riêng thầy/cô.</p>${link}` +
+        `<p style="font-size:14px;color:#556070">Nếu thầy/cô không yêu cầu cấp lại mật khẩu, hãy báo cho khoa.</p>` +
+        `<p style="font-size:14px;color:#7a8596">${esc(cfg.tenNguoiGui)}</p></div>`,
+    });
+    return { ok: true };
+  } finally { lock.releaseLock(); }
 }
 
 // ---------------------------------------------------------------- Firestore REST
@@ -411,96 +383,6 @@ function fsList(col) {
   return out;
 }
 
-// ---------------------------------------------------------------- Giáo viên
-function readTeachers() {
-  const sh = SpreadsheetApp.getActive().getSheetByName(SH.GV);
-  const last = sh.getLastRow();
-  if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, 5).getValues()
-    .filter((r) => String(r[0]).trim())
-    .map((r) => ({ email: String(r[0]).trim().toLowerCase(), name: String(r[1]).trim(), to: Number(r[2]), prior: Number(r[3] || 0), admin: /^(x|admin|true|1)$/i.test(String(r[4]).trim()), lead: /^(tt|tổ trưởng|to truong)$/i.test(String(r[4]).trim()) }));
-}
-
-// ---------------------------------------------------------------- Tài khoản đăng nhập (email + mật khẩu)
-function idtFetch(path, body) {
-  const res = UrlFetchApp.fetch('https://identitytoolkit.googleapis.com/v1/' + path, {
-    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
-    payload: JSON.stringify(body),
-  });
-  let json = {}; try { json = JSON.parse(res.getContentText() || '{}'); } catch (e) { /* không phải JSON */ }
-  return { code: res.getResponseCode(), json };
-}
-/**
- * Tạo tài khoản Firebase Auth (email đã xác thực, mật khẩu mặc định) cho GV chưa có.
- * Không bao giờ đặt lại mật khẩu của tài khoản đã được GV dùng.
- * Danh sách đã tạo được nhớ trong Script Properties nên các lần đồng bộ sau không gọi lại.
- */
-function ensureAccounts(teachers) {
-  const cfg = getCfg(), pid = cfg.FIREBASE_PROJECT_ID;
-  const props = PropertiesService.getScriptProperties();
-  const done = new Set(JSON.parse(props.getProperty('acctDone') || '[]'));
-  const out = { created: 0, existing: 0, failed: [] };
-  teachers.filter((t) => !done.has(t.email)).forEach((t) => {
-    const r = idtFetch('accounts:signUp', { email: t.email, password: cfg.matKhauMacDinh, emailVerified: true, displayName: t.name, targetProjectId: pid });
-    if (r.code < 300) { out.created++; done.add(t.email); return; }
-    const msg = (r.json.error && r.json.error.message) || String(r.code);
-    if (msg.indexOf('EMAIL_EXISTS') === 0) {
-      // Đã có tài khoản. Nếu chưa xác thực email (có thể do người lạ đăng ký trước) thì xác thực lại và đặt về mật khẩu mặc định.
-      const l = idtFetch(`projects/${pid}/accounts:lookup`, { email: [t.email] });
-      const u = l.json.users && l.json.users[0];
-      if (u && !u.emailVerified) {
-        const up = idtFetch(`projects/${pid}/accounts:update`, { localId: u.localId, emailVerified: true, password: cfg.matKhauMacDinh });
-        if (up.code >= 300) { out.failed.push(`${t.email}: không xác thực được (${up.code})`); return; }
-      }
-      out.existing++; done.add(t.email);
-    } else out.failed.push(`${t.email}: ${msg}`);
-  });
-  props.setProperty('acctDone', JSON.stringify(Array.from(done)));
-  return out;
-}
-function menuAccounts() {
-  const r = ensureAccounts(readTeachers());
-  SpreadsheetApp.getUi().alert(`Tài khoản: tạo mới ${r.created}, đã có ${r.existing}` + (r.failed.length ? `\n\nLỗi:\n${r.failed.slice(0, 10).join('\n')}` : ''));
-}
-
-// ---------------------------------------------------------------- Đồng bộ lên
-function syncUp(ma) {
-  const cfg = getCfg(), dot = getDot(ma);
-  const { slots, errors } = checkAndMark(ma);
-  if (errors.length) throw new Error(`Còn ${errors.length} dòng lỗi ở tab ${TAB.CA}${ma}. Sửa rồi đồng bộ lại.`);
-  const teachers = readTeachers();
-  const badT = teachers.filter((t) => !/^[^@\s]+@[^@\s]+$/.test(t.email) || ![1, 2, 3].includes(t.to) || !t.name);
-  if (badT.length) throw new Error('GV thiếu tên / sai email / sai tổ: ' + badT.map((t) => t.email || t.name).join(', '));
-
-  const writes = [];
-  slots.forEach((s) => writes.push({
-    path: 'slots/' + s.id,
-    data: { dotId: ma, namHoc: cfg.namHoc, date: s.date, ca: s.ca, khoa: s.khoa, nganh: s.nganh, mon: s.mon, need: s.need, note: s.note, active: true, start: startDate(cfg, s.date, s.ca) },
-  }));
-  // Ca đã bị xoá khỏi sheet → ẩn đi (không xoá để giữ lịch sử đăng ký)
-  const keep = new Set(slots.map((s) => s.id));
-  fsList('slots').filter((d) => d.dotId === ma && d.active !== false && !keep.has(d._id))
-    .forEach((d) => writes.push({ path: 'slots/' + d._id, data: { active: false } }));
-  teachers.forEach((t) => writes.push({ path: 'teachers/' + t.email, data: { name: t.name, to: t.to, prior: t.prior, admin: t.admin, lead: t.lead } }));
-  // Danh sách công khai cho GV (để vẽ các hàng của bảng): chỉ tên, tổ, thứ tự; số ca cũ (prior) giữ riêng trong teachers
-  teachers.forEach((t, i) => writes.push({ path: 'roster/' + t.email, data: { name: t.name, to: t.to, order: i + 1 } }));
-  const far = new Date(Date.now() + 365 * 86400000);
-  writes.push({ path: 'dots/' + ma, data: { name: dot.ten, hocKy: dot.hocKy, open: dot.open, deadline: dot.hanChot || far, namHoc: cfg.namHoc, order: dot.order } });
-  const caTimes = {}; [1, 2, 3, 4].forEach((c) => (caTimes[c] = cfg.ca[c]));
-  writes.push({ path: 'config/main', data: { namHoc: cfg.namHoc, minCa: cfg.toiThieu, khoaNam1: Number(cfg.khoaNam1 || 0), caTimes } });
-  fsCommit(writes);
-  let acct;
-  try { acct = ensureAccounts(teachers); } catch (e) { acct = { created: 0, existing: 0, failed: [String(e.message || e)] }; }
-  return { slots: slots.length, teachers: teachers.length, acct };
-}
-function menuSyncUp() {
-  const r = syncUp(pickDot());
-  const a = r.acct;
-  SpreadsheetApp.getUi().alert(`Đã đồng bộ ${r.slots} ca và ${r.teachers} giảng viên lên Firebase.\nTài khoản đăng nhập: tạo mới ${a.created}, đã có ${a.existing}.` +
-    (a.failed.length ? `\n\nLỖI tạo tài khoản (dữ liệu ca vẫn đã đồng bộ):\n${a.failed.slice(0, 8).join('\n')}` : ''));
-}
-
 // ---------------------------------------------------------------- Kéo đăng ký về
 const pullRegs = (ma) => fsList('regs').filter((r) => r.dotId === ma);
 function syncDown(ma) {
@@ -518,9 +400,8 @@ function syncDown(ma) {
 // ---------------------------------------------------------------- Xuất MẪU
 function exportMau(ma) {
   const cfg = getCfg(), dot = getDot(ma);
-  const { slots, errors } = readSlots(ma);
-  if (errors.length) throw new Error('Tab CaThi còn dòng lỗi.');
-  if (!slots.length) throw new Error('Chưa có ca nào.');
+  const slots = readSlots(ma);
+  if (!slots.length) throw new Error('Đợt này chưa có ca nào (tổ trưởng thêm ca trên web).');
   slots.sort((a, b) => a.date.localeCompare(b.date) || a.ca - b.ca || a.khoa - b.khoa || a.nganh.localeCompare(b.nganh));
   const teachers = readTeachers();
   const regs = syncDown(ma);
@@ -622,7 +503,6 @@ function exportXlsx(ma) {
 }
 function menuXlsx() { SpreadsheetApp.getUi().alert('Đã lưu vào Drive:\n' + exportXlsx(pickDot())); }
 
-// ---------------------------------------------------------------- Mail nhắc
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 /**
@@ -630,7 +510,8 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':
  * items: [{ s: slot, arrive: 'HH:mm', start: 'HH:mm' }] đã sắp xếp theo ngày/ca
  * stat : { total, min }  số ca đã đăng ký trong năm học / mức tối thiểu
  */
-function buildReminder(cfg, name, items, stat) {
+function buildReminder(cfg, name, items, stat, sender) {
+  const from = (sender && sender.name) || cfg.tenNguoiGui;
   const first = items[0];
   // Ngày thật của các ca: "Thứ Hai, 27/07/2026" hoặc "Thứ Hai, 27/07/2026 và Thứ Ba, 28/07/2026"
   const days = items.map((i) => i.s.date).filter((d, i, a) => a.indexOf(d) === i).map(dateLongVN);
@@ -670,15 +551,15 @@ function buildReminder(cfg, name, items, stat) {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${cards}</table>
       <p style="font-size:16px;line-height:1.5;margin:6px 0 16px;color:#18202c;background:#f3f5f9;border-radius:10px;padding:12px 14px">${progress}</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${button}</table>
-      <p style="font-size:15px;line-height:1.5;margin:0;color:#556070">Cần đổi ca? Huỷ ca trên trang đăng ký (nếu còn hạn) hoặc liên hệ thư ký khoa. Thư này gửi tự động, vui lòng không trả lời.</p>
+      <p style="font-size:15px;line-height:1.5;margin:0;color:#556070">${sender && sender.replyTo ? 'Cần đổi ca hoặc cần hỗ trợ? Hãy trả lời thư này để liên hệ trực tiếp với tổ trưởng, hoặc huỷ ca trên trang đăng ký (nếu còn hạn).' : 'Cần đổi ca? Huỷ ca trên trang đăng ký (nếu còn hạn) hoặc liên hệ thư ký khoa. Thư này gửi tự động, vui lòng không trả lời.'}</p>
     </td></tr>
   </table>
-  <div style="font-size:13px;color:#7a8596;padding:12px 0">${esc(cfg.tenNguoiGui)}</div>
+  <div style="font-size:13px;color:#7a8596;padding:12px 0">${esc(from)}</div>
 </td></tr></table></body></html>`;
 
   const text = `Chào thầy/cô ${name},\n\nNhắc lịch coi thi (${cfg.coSo}):\n\n` +
     items.map(({ s, arrive, start }) => `- ${dateLongVN(s.date)}: Ca ${s.ca}, BẮT ĐẦU ${start} (có mặt tại HĐ thi lúc ${arrive}), Khoá ${s.khoa} ${s.nganh}${s.mon ? ', ' + s.mon : ''}`).join('\n') +
-    `\n\n${progress.replace(/<\/?b>/g, '')}\n\n${cfg.tenNguoiGui}`;
+    `\n\n${progress.replace(/<\/?b>/g, '')}\n\n${from}`;
   return { subject, html, text };
 }
 
@@ -688,7 +569,7 @@ function installTriggers() {
   SpreadsheetApp.getActive().toast('Đã cài: kiểm tra mỗi giờ và gửi mail nhắc.');
 }
 
-/** Chạy mỗi giờ: ca nào còn ≤ N giờ nữa tới giờ CÓ MẶT (và chưa nhắc) → gửi mail, gộp các ca của cùng 1 GV vào 1 thư. */
+/** Chạy mỗi giờ: ca nào còn ≤ N giờ nữa tới giờ CÓ MẶT (và chưa nhắc) → gửi mail, gộp các ca của cùng 1 GV vào 1 thư. Người gửi hiển thị là TỔ TRƯỞNG của GV đó. */
 function sendReminders() {
   const cfg = getCfg();
   const ss = SpreadsheetApp.getActive();
@@ -699,10 +580,11 @@ function sendReminders() {
 
   const allRegs = fsList('regs').filter((r) => r.namHoc === cfg.namHoc);
   const yearCount = {}; allRegs.forEach((r) => (yearCount[r.email] = (yearCount[r.email] || 0) + 1));
-  const prior = {}; readTeachers().forEach((t) => (prior[t.email] = t.prior));
+  const teachers = readTeachers(), byEmail = {}, leadBy = {};
+  teachers.forEach((t) => { byEmail[t.email] = t; if (t.leadTo && !leadBy[t.leadTo]) leadBy[t.leadTo] = t; });
 
   const slotMap = {};
-  readDots().forEach((d) => { try { readSlots(d.ma).slots.forEach((s) => (slotMap[s.id] = s)); } catch (e) { /* đợt chưa có tab */ } });
+  fsList('slots').forEach((d) => { if (d.active !== false) slotMap[d._id] = { id: d._id, date: d.date, ca: d.ca, khoa: d.khoa, nganh: d.nganh, mon: d.mon || '', note: d.note || '' }; });
 
   const perUser = {};
   allRegs.forEach((r) => {
@@ -713,22 +595,28 @@ function sendReminders() {
   });
 
   Object.keys(perUser).forEach((email) => {
-    const u = perUser[email];
+    const u = perUser[email], t = byEmail[email];
     u.items.sort((a, b) => a.s.date.localeCompare(b.s.date) || a.s.ca - b.s.ca);
-    const mail = buildReminder(cfg, u.name, u.items, { total: (prior[email] || 0) + (yearCount[email] || 0), min: cfg.toiThieu });
-    MailApp.sendEmail({ to: email, subject: mail.subject, body: mail.text, htmlBody: mail.html, name: cfg.tenNguoiGui });
+    const lead = t && leadBy[t.to];
+    const sender = lead && lead.email !== email
+      ? { name: `${lead.name} - Tổ trưởng ${TO_LABEL[t.to]}`, replyTo: lead.email }
+      : { name: cfg.tenNguoiGui };
+    const mail = buildReminder(cfg, u.name, u.items, { total: (t ? t.prior : 0) + (yearCount[email] || 0), min: cfg.toiThieu }, sender);
+    const opt = { to: email, subject: mail.subject, body: mail.text, htmlBody: mail.html, name: sender.name };
+    if (sender.replyTo) opt.replyTo = sender.replyTo;
+    MailApp.sendEmail(opt);
     u.items.forEach((i) => log.appendRow([i.key, new Date(), email]));
   });
 }
 
-/** Gửi mail mẫu (dữ liệu giả từ 2 ca đầu của đợt đang mở) về chính email của admin để xem thử. */
+/** Gửi mail mẫu (dữ liệu giả từ 2 ca đầu của đợt) về chính email của admin để xem thử. */
 function menuTestMail() {
   const ma = pickDot(), cfg = getCfg();
-  const slots = readSlots(ma).slots.sort((a, b) => a.date.localeCompare(b.date) || a.ca - b.ca).slice(0, 2);
-  if (!slots.length) throw new Error('Đợt này chưa có ca nào.');
+  const slots = readSlots(ma).sort((a, b) => a.date.localeCompare(b.date) || a.ca - b.ca).slice(0, 2);
+  if (!slots.length) throw new Error('Đợt này chưa có ca nào (tổ trưởng thêm ca trên web).');
   const items = slots.map((s) => ({ s, arrive: cfg.ca[s.ca].arrive, start: cfg.ca[s.ca].start }));
-  const mail = buildReminder(cfg, 'Nguyễn Văn A (thư thử)', items, { total: 14, min: cfg.toiThieu });
   const to = Session.getEffectiveUser().getEmail();
-  MailApp.sendEmail({ to, subject: '[THỬ] ' + mail.subject, body: mail.text, htmlBody: mail.html, name: cfg.tenNguoiGui });
+  const mail = buildReminder(cfg, 'Nguyễn Văn A (thư thử)', items, { total: 14, min: cfg.toiThieu }, { name: 'Nguyễn Văn B - Tổ trưởng Chuyên 1', replyTo: to });
+  MailApp.sendEmail({ to, subject: '[THỬ] ' + mail.subject, body: mail.text, htmlBody: mail.html, name: 'Nguyễn Văn B - Tổ trưởng Chuyên 1', replyTo: to });
   SpreadsheetApp.getUi().alert('Đã gửi mail thử tới ' + to);
 }

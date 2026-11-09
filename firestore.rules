@@ -2,6 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{db}/documents {
 
+    // ---------------------------------------------------------------- Hàm dùng chung
     function signedIn() {
       return request.auth != null && request.auth.token.email_verified == true;
     }
@@ -10,32 +11,80 @@ service cloud.firestore {
       return signedIn() && exists(/databases/$(db)/documents/teachers/$(me()));
     }
     function teacher() { return get(/databases/$(db)/documents/teachers/$(me())).data; }
-    function dotOpen(dotId) {
-      let d = get(/databases/$(db)/documents/dots/$(dotId)).data;
-      return d.open == true && request.time < d.deadline;
-    }
-    // Cột E trong tab GiaoVien: x => admin (toàn khoa); tt => lead (tổ trưởng, chỉ xem GV cùng tổ)
+
+    // Vai trò (cột E trong tab GiaoVien): tt1/tt2/tt3 => leadTo = 1/2/3 (tổ trưởng); x => admin (toàn khoa)
     function isAdmin() { return isTeacher() && teacher().get('admin', false) == true; }
-    function isLead() { return isTeacher() && teacher().get('lead', false) == true; }
+    function leadTo() { return teacher().get('leadTo', 0); }
+    function isManager() { return isAdmin() || leadTo() > 0; }
+    function canEditTo(n) { return isAdmin() || leadTo() == n; }   // được sửa số GV cần của tổ n
+
+    function dotData(dotId) { return get(/databases/$(db)/documents/dots/$(dotId)).data; }
+    // GV đăng ký được: trạng thái MO và chưa quá hạn chót
+    function dotOpen(dotId) {
+      let d = dotData(dotId);
+      return d.get('status', 'DONG') == 'MO' && request.time < d.deadline;
+    }
+    // Tổ trưởng thêm/sửa ca được: trạng thái SOAN (soạn lịch) hoặc MO
+    function dotEditable(dotId) { return dotData(dotId).get('status', 'DONG') in ['SOAN', 'MO']; }
     function slotOf(slotId) { return get(/databases/$(db)/documents/slots/$(slotId)).data; }
 
-    // Dữ liệu do Apps Script ghi (quyền chủ project) – GV chỉ đọc
-    match /teachers/{e} {
-      allow read: if signedIn() && (e == me() || isAdmin() || (isLead() && resource.data.to == teacher().to));
-      allow write: if false;
+    // Số GV cần: đủ 3 khoá t1,t2,t3, là số nguyên 0..20
+    function needShapeOk(n) {
+      return n.keys().hasOnly(['t1', 't2', 't3']) && n.keys().hasAll(['t1', 't2', 't3'])
+        && n.t1 is int && n.t2 is int && n.t3 is int
+        && n.t1 >= 0 && n.t1 <= 20 && n.t2 >= 0 && n.t2 <= 20 && n.t3 >= 0 && n.t3 <= 20;
     }
-    // Tên + tổ của mọi GV (để vẽ bảng); KHÔNG chứa số ca đã gác (nằm ở teachers, chỉ chính chủ đọc được)
+    // Tạo ca mới: chỉ được điền số cho tổ mình phụ trách, tổ khác phải bằng 0
+    function needCreateOk(n) {
+      return needShapeOk(n) && (canEditTo(1) || n.t1 == 0) && (canEditTo(2) || n.t2 == 0) && (canEditTo(3) || n.t3 == 0);
+    }
+    // Sửa ca đã có: chỉ được đổi số của tổ mình, số của tổ khác phải giữ nguyên
+    function needUpdateOk(n, o) {
+      return needShapeOk(n) && (canEditTo(1) || n.t1 == o.t1) && (canEditTo(2) || n.t2 == o.t2) && (canEditTo(3) || n.t3 == o.t3);
+    }
+
+    // ---------------------------------------------------------------- Người dùng
+    match /teachers/{e} {
+      // Đọc: chính mình; admin đọc tất cả; tổ trưởng đọc GV cùng tổ mình phụ trách
+      allow read: if signedIn() && (e == me() || (isTeacher() && (isAdmin() || (leadTo() > 0 && resource.data.to == leadTo()))));
+      // GV chỉ được tự tắt cờ "đang dùng mật khẩu tạm" của chính mình (sau khi đổi mật khẩu)
+      allow update: if signedIn() && e == me()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pwTemp'])
+        && request.resource.data.pwTemp == false;
+      allow create, delete: if false;     // do Apps Script ghi
+    }
+
+    // Tên + tổ của mọi GV để vẽ bảng; KHÔNG có số ca đã gác (nằm ở teachers)
     match /roster/{e} { allow read: if isTeacher(); allow write: if false; }
     match /config/{d} { allow read: if isTeacher(); allow write: if false; }
     match /dots/{d}   { allow read: if isTeacher(); allow write: if false; }
-    match /slots/{s}  { allow read: if isTeacher(); allow write: if false; }
 
-    // ------------------------------------------------------------------
-    // CHỐNG VƯỢT SỐ LƯỢNG KHÔNG CẦN BỘ ĐẾM:
-    // mỗi "chỗ" của một tổ trong một ca là một tài liệu claims/<slotId>_t<tổ>_<k>, 1 <= k <= số GV cần.
+    // ---------------------------------------------------------------- Ca thi (tổ trưởng thêm / sửa trên web)
+    // Mã ca = <đợt>-<yyyymmdd>-c<ca>-k<khoá>-<ngành>: cố định theo nội dung, nên không tạo được 2 ca trùng.
+    // Mỗi tổ chỉ được sửa số GV cần của tổ mình; "xoá ca" = đặt số của tổ mình về 0.
+    match /slots/{s} {
+      allow read: if isTeacher();
+      allow create: if isTeacher() && isManager()
+        && request.resource.data.dotId is string
+        && dotEditable(request.resource.data.dotId)
+        && request.resource.data.namHoc == dotData(request.resource.data.dotId).namHoc
+        && request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.ca in [1, 2, 3, 4]
+        && request.resource.data.nganh in ['SPA', 'NNA']
+        && request.resource.data.khoa is int
+        && s == request.resource.data.dotId + '-' + request.resource.data.date.replace('-', '') + '-c' + string(request.resource.data.ca) + '-k' + string(request.resource.data.khoa) + '-' + request.resource.data.nganh
+        && needCreateOk(request.resource.data.need);
+      allow update: if isTeacher() && isManager()
+        && dotEditable(resource.data.dotId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['need', 'mon', 'note'])
+        && needUpdateOk(request.resource.data.need, resource.data.need);
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------- Đăng ký (chống vượt số lượng không cần bộ đếm)
+    // Mỗi "chỗ" của một tổ trong một ca là một tài liệu claims/<slotId>_t<tổ>_<k>, 1 <= k <= số GV cần.
     // Mã tài liệu là duy nhất => người thứ hai tranh cùng chỗ sẽ bị từ chối.
     // Đăng ký = ghi đồng thời regs + claims trong một batch; mỗi bên kiểm tra bên kia.
-    // ------------------------------------------------------------------
     match /claims/{c} {
       allow read: if false;
       allow create: if isTeacher()

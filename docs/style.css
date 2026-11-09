@@ -139,3 +139,27 @@ table.list th{background:var(--bg);position:sticky;top:0}
 table.list td.bad{color:var(--bad);font-weight:700} table.list td.okc{color:var(--ok);font-weight:700}
 
 [hidden]{display:none !important}   /* thuộc tính hidden luôn thắng display của lớp CSS */
+
+/* ===== Phiên bản 2: vai trò, điều hướng 2 cấp, thống kê, thêm ca ===== */
+.tabs.level1{margin-bottom:6px}
+.tabs.level1 button{background:var(--bg);font-size:1.05rem}
+.tabs.level1 button.on{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+#nav2{margin-bottom:12px}
+.okmsg{color:var(--ok);font-weight:600;min-height:1.2em;margin:6px 0}
+.kpis3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:10px 0}
+.kpis3 .card{margin:0;padding:10px 12px}
+.kpis3 .big{font-size:1.5rem}
+@media (max-width:600px){ .kpis3 .small{font-size:.7rem} }
+tr.gv-row{cursor:pointer}
+tr.gv-row:hover td{background:var(--bg)}
+tr.gv-row.open td{background:var(--okbg)}
+.gv-detail td{padding:0 !important;background:var(--bg)}
+.detail{padding:10px 12px}
+.detail table.list th{position:static}
+details.more{margin-top:14px}
+details.more summary{cursor:pointer;min-height:40px;display:flex;align-items:center;gap:8px}
+.need-in{display:flex;flex-direction:column;gap:4px;min-width:120px}
+.need-in span{font-size:.85rem;color:var(--muted)}
+input.num{width:72px;padding:6px 8px;min-height:44px;font:inherit;border:2px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+select.field{appearance:auto}
+.row{display:flex;flex-wrap:wrap;gap:6px 16px}

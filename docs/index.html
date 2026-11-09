@@ -19,6 +19,7 @@
 </header>
 
 <main>
+  <!-- 1. Trang đầu: đăng nhập -->
   <section id="login" class="card" hidden>
     <form id="loginForm" autocomplete="on">
       <label for="email">Email</label>
@@ -27,6 +28,7 @@
       <input class="field" id="pw" name="password" type="password" autocomplete="current-password" required>
       <label class="check"><input type="checkbox" id="showPw"> Hiện mật khẩu</label>
       <div class="err" id="loginErr" role="alert"></div>
+      <div class="okmsg" id="loginInfo" role="status"></div>
       <button class="primary wide" type="submit">Đăng nhập</button>
       <p class="small center-t">Lần đầu đăng nhập, dùng mật khẩu mặc định do khoa cấp, sau đó vào <b>Cài đặt</b> để đổi.</p>
       <p class="center-t"><button type="button" class="link" id="btnForgot">Quên mật khẩu?</button></p>
@@ -39,9 +41,10 @@
     <button id="btnOut2">Đăng xuất</button>
   </section>
 
+  <!-- 2. Sau đăng nhập: giao diện theo vai trò (do app.js dựng) -->
   <section id="app" hidden>
     <div id="pwBanner" class="banner" hidden>
-      Bạn đang dùng mật khẩu mặc định. Nên đổi mật khẩu để người khác không đăng ký thay bạn.
+      Bạn đang dùng mật khẩu do khoa cấp. Nên đổi mật khẩu để người khác không đăng ký thay bạn.
       <button class="primary" id="btnPwNow">Đổi mật khẩu ngay</button>
     </div>
 
@@ -62,22 +65,9 @@
       </form>
     </section>
 
-    <div class="card" id="progress"></div>
-    
-    <div class="tabs">
-      <button class="on" data-view="all">Tất cả ca thi</button>
-      <button data-view="mine">Ca của tôi</button>
-      <button data-view="admin" id="tabAdmin" hidden>Tổng quan</button>
-    </div>
-
-    <div class="filters" id="filters">
-      <div class="fl">Lọc theo khoá</div>
-      <div id="fKhoa" class="chips"></div>
-      <div class="fl">Lọc theo ngành</div>
-      <div id="fNganh" class="chips"></div>
-    </div>
-
-    <div id="list"></div>
+    <div id="nav1" class="tabs level1" hidden></div>   <!-- tổ trưởng: Quản lý | Gác thi của tôi -->
+    <div id="nav2" class="tabs"></div>                  <!-- thẻ con -->
+    <div id="page"></div>
   </section>
 
   <div id="loading" class="center muted">Đang tải…</div>

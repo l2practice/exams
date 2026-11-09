@@ -1,59 +1,95 @@
-# Đăng ký gác thi – Khoa Ngoại ngữ
+# Đăng ký gác thi – Khoa Ngoại ngữ, ĐH Đồng Nai
 
 ```
-Google Sheet (admin nhập, xuất mẫu)  <──Apps Script──>  Firestore (GV đăng ký, realtime)  <──  Web (GitHub Pages)
-                                              └── mail nhắc trước 18 giờ (tính từ giờ CÓ MẶT)
+Google Sheet (admin)                      Firestore                         Web (GitHub Pages)
+ • GiaoVien: email, tổ, vai trò   ──►  teachers / roster / dots / config  ──►  GV: xem + đăng ký
+ • Dot: các đợt thi, trạng thái                    ▲                           Tổ trưởng: thêm ca, thống kê
+ • Xuất MẪU nộp  ◄── kéo đăng ký ◄────  slots / regs / claims  ◄──────────────  (ghi trực tiếp)
+ • Mail nhắc, mật khẩu mới (Apps Script)
 ```
 
-**Quy ước:** Chuyên 1 = tổ SPA, Chuyên 2 = tổ NNA, Cơ bản = tổ 3.
-**Ca (bắt đầu / có mặt):** 1 = 07:30 / 07:15 · 2 = 09:00 / 08:45 · 3 = 13:30 / 13:15 · 4 = 15:00 / 14:45 (sửa trong tab `CauHinh`).
+## 1. Vai trò (admin đặt trong tab `GiaoVien`, cột E)
 
-## Cấu trúc Sheet
-- Tab cố định: `CauHinh` (cấu hình chung), `GiaoVien` (email, tên, tổ, số ca đã gác trước đó), `Dot` (danh sách đợt thi), `NhatKyNhac`.
-- **Mỗi đợt thi = một nhóm tab:** `CaThi_<mã>` (nhập lịch), `DangKy_<mã>` và `XuatMau_<mã>` (tự sinh).
-- Mức tối thiểu 20 ca tính **cộng dồn cả năm học, qua mọi đợt** (`namHoc` trong `CauHinh`).
+| Cột E | Vai trò | Thấy gì trên web |
+|---|---|---|
+| (trống) | Tổ viên | 2 thẻ: **Tổng quan của tôi** · **Đăng ký ca thi** |
+| `tt1` | Tổ trưởng tổ Chuyên 1 (SPA) | Tab **Quản lý** (Thống kê giảng viên · Thêm ca thi mới) + tab **Gác thi của tôi** (như tổ viên) |
+| `tt2` | Tổ trưởng tổ Chuyên 2 (NNA) | như trên, chỉ với tổ 2 |
+| `tt3` | Tổ trưởng tổ Cơ bản | như trên, chỉ với tổ 3 |
+| `x` | Quản trị toàn khoa (tuỳ chọn) | như tổ trưởng nhưng cả 3 tổ |
 
-## A. Firebase (làm một lần)
-1. console.firebase.google.com → tạo project (gói Spark miễn phí là đủ).
-2. **Authentication → Sign-in method** → bật **Email/Password** (không cần bật "Email link"). *Settings → Authorized domains* thêm `<tên-github>.github.io`. Nếu có mục *User actions → Enable create (sign-up)* thì tắt đi.
-3. **Firestore Database** → Create (production mode).
-4. Tab **Rules** → dán `firestore.rules` → Publish.
-5. **Project settings → Your apps → Web (</>)** → copy `firebaseConfig` vào `docs/firebase-config.js`.
+Tổ trưởng chỉ thấy giảng viên của tổ mình và chỉ sửa được số giảng viên cần **của tổ mình**. Firestore rules ép đúng như vậy.
+Cột C (Tổ) là tổ mà GV thuộc về, dùng để đăng ký ca; tổ trưởng cũng đăng ký gác thi như mọi người.
 
-## B. Web (GitHub Pages)
-Giao diện nằm trong `docs/`. Vào repo *Settings → Pages* → Source: **Deploy from a branch**, branch `main`, thư mục `/docs`. Địa chỉ sẽ là `https://l2practice.github.io/exams/`. Ghi link vào `webUrl` trong `CauHinh` (nút trong mail).
+## 2. Đợt thi: 3 trạng thái (tab `Dot`, cột D)
 
-## C. Google Sheet + Apps Script
-1. Tạo Sheet mới → **Extensions → Apps Script**; dán toàn bộ `apps-script/Code.gs` vào file `Code.gs`, và `apps-script/appsscript.json` vào `appsscript.json` (bật *Project Settings → Show "appsscript.json" manifest file*). Chỉ cần 2 file này, không tạo thêm file nào khác.
-2. **Project Settings → Google Cloud Platform project → Change project** → nhập *project number* của Firebase.
-3. Tải lại Sheet → **Gác thi → Tạo các tab cố định**; điền `CauHinh`, `GiaoVien`.
-4. **Gác thi → Cài lịch gửi mail nhắc**; **Gửi thử mail nhắc cho tôi** để xem mail thật.
+- `SOAN`: tổ trưởng đang soạn lịch (thêm ca). GV **chưa thấy**, chưa đăng ký được.
+- `MO`: GV đăng ký được đến hạn chót. Tổ trưởng vẫn thêm/sửa ca được.
+- `DONG`: khoá, chỉ xem.
 
-## D. Mỗi đợt thi
-1. **0. Tạo đợt thi mới** → nhập mã (VD `HK1-2627-GK`) và tên → có tab `CaThi_<mã>`. Điền hạn chót ở tab `Dot`.
-2. Ở tab `CaThi_<mã>`: **1. Thêm ca nhanh** (ngày × ca × khoá × ngành), sửa lẻ trong tab nếu cần.
-3. **2. Kiểm tra dữ liệu** → **3. Đồng bộ lên Firebase** (chạy lại bất kỳ lúc nào; đăng ký đã có được giữ nguyên).
-4. Hết hạn: **4. Kéo đăng ký + Xuất MẪU** → tab `XuatMau_<mã>` → **5. Lưu .xlsx** để nộp.
-Các menu làm việc trên đợt của tab đang mở.
+## 3. Cài đặt từng bước
 
-## Giao diện đăng ký (bảng giống tab xuất mẫu)
-Mỗi đợt thi của năm học là **một bảng**: cột = ca (hàng Ngày gộp cột / Ca + giờ bắt đầu / Khoá-Ngành / "Còn n" chỗ cho tổ của GV), hàng = GV (hàng của chính GV nằm đầu, có nút **+** để đăng ký và **✔** để huỷ; hàng đồng nghiệp hiện chữ **X**), cột **Cộng**, chân bảng "Tổng đăng ký" và "SL được giao". Cột tên và các hàng tiêu đề dính khi cuộn. Danh sách hàng lấy từ collection `roster` (tên + tổ, ghi bởi Apps Script khi đồng bộ).
+### Bước 1 – Firebase (project `dnu-exams`)
+1. **Firestore Database → Rules**: xoá hết, dán toàn bộ `firestore.rules` → **Publish**. (Luật đã đổi nên bắt buộc dán lại.)
+2. **Authentication → Sign-in method → Email/Password** phải đang **Enabled**.
+3. *Authentication → Settings → Authorized domains* có `l2practice.github.io`.
 
-## Tab Tổng quan (quản trị / tổ trưởng)
-Trong tab `GiaoVien`, cột **E** (Vai trò quản lý):
-- `x` = quản trị toàn khoa: thấy cả 3 tổ.
-- `tt` = tổ trưởng: chỉ thấy GV, ca thiếu người và chỉ tiêu của **tổ mình** (Firestore rules cũng ép như vậy).
-Người có vai trò này thấy thêm tab **Tổng quan**: tiến độ từng đợt, chỉ tiêu theo tổ, danh sách ca còn thiếu người, danh sách GV chưa đủ 20 ca và nút **Tải CSV**. Sau khi sửa cột E, chạy lại **Đồng bộ lên Firebase**.
+### Bước 2 – GitHub Pages
+Repo *Settings → Pages → Deploy from a branch → `main` → `/docs` → Save*. Địa chỉ: `https://l2practice.github.io/exams/`. Sau mỗi lần cập nhật code, chờ khoảng 1–2 phút; nếu vẫn thấy bản cũ, mở bằng cửa sổ ẩn danh hoặc thêm `?v=2` sau địa chỉ.
 
-## Đăng nhập
-GV đăng nhập bằng **email + mật khẩu**. Mật khẩu mặc định là `chuyen1` (đổi ở `matKhauMacDinh` trong `CauHinh`; trên web đổi trong hằng số `DEFAULT_PW` ở `docs/app.js` cho khớp). Ô email nhớ email lần trước; GV tự đổi mật khẩu ở **Cài đặt**; có nút "Quên mật khẩu?" gửi thư đặt lại.
-Tài khoản được tạo tự động khi **Đồng bộ lên Firebase** (hoặc menu *Tạo tài khoản đăng nhập cho GV*), với email đã xác thực, chỉ cho email có trong tab `GiaoVien`. Firestore rules yêu cầu email đã xác thực, nên người tự đăng ký bằng email lạ không vào được dữ liệu.
-Lưu ý: mật khẩu mặc định chung nghĩa là ai biết email GV đều đăng nhập được cho tới khi GV đổi mật khẩu. Web sẽ nhắc đổi khi GV đăng nhập bằng mật khẩu mặc định.
+### Bước 3 – Apps Script (mở từ chính Google Sheet: *Extensions → Apps Script*)
+1. Chỉ giữ **2 file**: `Code.gs` và `appsscript.json`. Xoá `Dialog.gs`/`Dialog.html` nếu còn.
+2. Dán đè `apps-script/Code.gs` vào `Code.gs`; `appsscript.json` giữ như trong repo. Bấm **Save**.
+3. *Project Settings → Google Cloud Platform (GCP) Project* phải là project number `261864613847` (đã làm).
+4. **Deploy → Manage deployments** → bút chì cạnh deployment đang có → *Version: New version* → **Deploy**. Kiểm tra:
+   - *Execute as:* **Me** (`duongthanhtu.dnu@gmail.com`)
+   - *Who has access:* **Anyone**
+   Địa chỉ `/exec` giữ nguyên và đã được điền vào `docs/firebase-config.js` (`resetUrl`). Nếu bạn tạo deployment **mới** thì địa chỉ đổi, hãy dán địa chỉ mới vào `resetUrl`.
+   Thư "mật khẩu mới" và thư nhắc lịch đều gửi từ tài khoản **chạy script** (`duongthanhtu.dnu@gmail.com`).
 
-## Cách chặn vượt số lượng (không dùng bộ đếm)
-Mỗi "chỗ" của một tổ trong một ca là một tài liệu `claims/<ca>_t<tổ>_<k>` (k = 1..số GV cần). Đăng ký = tạo cùng lúc `regs` + `claims`; Firestore rules bắt buộc hai bên khớp nhau và mã chỗ là duy nhất, nên hai người không thể giữ cùng một chỗ, và không ai đăng ký quá số cần hay ngoài tổ của mình. Số "đã đăng ký" hiển thị được đếm từ danh sách đăng ký, không có số nào để bị sai lệch. Rules này **chưa được chạy thử** với Firebase Emulator: thử trước khi mở cho GV.
+### Bước 4 – Google Sheet
+1. Tải lại sheet → **Gác thi → Tạo / cập nhật các tab cố định** (cấp quyền nếu được hỏi). Lệnh này cập nhật tiêu đề cột và danh sách chọn, không xoá dữ liệu.
+2. Tab **`CauHinh`**: `FIREBASE_PROJECT_ID` = `dnu-exams`; `webUrl` = `https://l2practice.github.io/exams/`; kiểm tra `namHoc`, `khoaHopLe`.
+3. Tab **`GiaoVien`** (từ dòng 2): A Email · B Họ tên · C Tổ (1/2/3) · D Số ca đã gác trước khi dùng app · E Vai trò (`tt1`/`tt2`/`tt3`/`x`/trống). Email phải đúng từng chữ, vì đó là tên đăng nhập.
+4. **Gác thi → 0. Tạo đợt thi mới** (mã vd `HK1-2627`, tên vd `HỌC KỲ 1`). Điền **Hạn chót đăng ký** ở tab `Dot`, cột E.
 
-## Ghi chú
-- Mỗi GV chỉ 1 ca tại một (ngày, ca), dù thuộc đợt nào.
-- Giảm số GV cần của một ca đã có người đăng ký: người đã đăng ký vẫn giữ chỗ, hãy huỷ thủ công ở Firestore nếu cần.
-- Gmail thường giới hạn ~100 mail/ngày (Workspace ~1.500); mail gộp mọi ca của một GV vào một thư.
+### Bước 5 – Đồng bộ
+**Gác thi → 1. Đồng bộ lên Firebase.** Hộp thoại phải báo số đợt, số giảng viên và "Tài khoản đăng nhập: tạo mới N". Tài khoản mới có mật khẩu mặc định (`matKhauMacDinh`, hiện là `chuyen1`) và web sẽ nhắc GV đổi. Chạy lại bất cứ lúc nào (thêm GV, đổi vai trò, đổi hạn chót, đổi trạng thái đợt); ca thi và đăng ký không bị đụng tới.
+
+### Bước 6 – Chạy thử trọn vòng
+1. Mở web bằng cửa sổ ẩn danh, đăng nhập bằng email tổ trưởng.
+2. **Quản lý → Thêm ca thi mới**: chọn đợt `SOAN`, nhập ngày, tick ca/khoá/ngành, số GV cần của tổ → *Xem trước* → *Thêm vào đợt*.
+3. Ở Sheet đổi trạng thái đợt thành `MO` → **Đồng bộ lại**.
+4. Đăng nhập bằng một tổ viên → thẻ **Đăng ký ca thi** → bấm **+**. Thử thêm: huỷ ca, đổi mật khẩu, Quên mật khẩu.
+5. **Gác thi → 2. Kéo đăng ký về Sheet + Xuất MẪU nộp** → so tab `XuatMau_<mã>` với file mẫu của trường → **3. Lưu file .xlsx**.
+6. **Gác thi → Gửi thử mail nhắc cho tôi** → nếu ổn: **Cài lịch gửi mail nhắc (mỗi giờ)**.
+
+## 4. Quy trình mỗi đợt thi
+1. Admin: **Tạo đợt thi mới** (trạng thái `SOAN`) → Đồng bộ.
+2. Tổ trưởng từng tổ: **Quản lý → Thêm ca thi mới** (cùng một ca thì các tổ tự gộp số của mình vào). Theo dõi ở danh sách "Ca đã thêm", sửa hoặc xoá được khi chưa có ai đăng ký.
+3. Admin: đổi trạng thái đợt sang `MO`, kiểm tra hạn chót → Đồng bộ. Thông báo cho GV.
+4. GV đăng ký. Tổ trưởng theo dõi ở **Thống kê giảng viên** (bấm tên GV để xem từng ca) và danh sách "Ca còn thiếu người".
+5. Hết hạn: admin đổi sang `DONG` → Đồng bộ → **Kéo đăng ký + Xuất MẪU** → nộp.
+
+## 5. Mail
+- **Nhắc lịch:** gửi khi ca còn ≤ `nhacTruocGio` (mặc định 18) giờ tới giờ **có mặt**. Giờ bắt đầu nổi bật, giờ có mặt ghi nhỏ. Người gửi hiển thị là **tổ trưởng của GV đó** (tên "Họ tên – Tổ trưởng …") và GV bấm *Trả lời* là gửi tới tổ trưởng; địa chỉ gửi thật vẫn là tài khoản chạy script.
+- **Quên mật khẩu:** web gọi Apps Script, script đặt mật khẩu ngẫu nhiên mới trong Firebase và gửi tới đúng email đó (tối đa 1 lần/10 phút cho mỗi email, 80 thư/ngày). Luôn báo "đã gửi" dù email có trong danh sách hay không để không lộ danh sách GV.
+- Gmail thường giới hạn ~100 thư/ngày (Workspace ~1.500).
+
+## 6. Xử lý lỗi thường gặp
+
+| Hiện tượng | Nguyên nhân thường gặp |
+|---|---|
+| "Email hoặc mật khẩu chưa đúng" | Email không khớp `GiaoVien`, hoặc **chưa Đồng bộ** nên chưa có tài khoản. |
+| `auth/operation-not-allowed` | Chưa bật Email/Password trong Firebase. |
+| Đồng bộ báo lỗi ở phần tài khoản | Chưa đổi GCP project (bước 3.3) hoặc tài khoản chạy script chưa là Owner/Editor của project Firebase. |
+| Quên mật khẩu báo "Chưa gửi được" | Chưa Deploy lại Web App bản mới (bước 3.4), hoặc *Who has access* chưa là **Anyone**. |
+| Tổ trưởng không thấy tab Quản lý | Cột E chưa ghi `tt1/tt2/tt3` hoặc chưa Đồng bộ; đăng xuất rồi đăng nhập lại. |
+| Thêm ca báo "Không lưu được" | Đợt không còn `SOAN`/`MO`, hoặc ca vừa được tổ khác tạo cùng lúc: bấm *Xem trước* rồi thử lại. |
+| Trang web vẫn là bản cũ | Bộ nhớ đệm của GitHub Pages: dùng cửa sổ ẩn danh hoặc thêm `?v=2`. |
+
+## 7. Giới hạn đã biết
+- Firestore rules **chưa được chạy thử** với Firebase Emulator; hãy thử với 2–3 tài khoản trước khi mở rộng.
+- Xoá GV khỏi tab `GiaoVien` chưa tự xoá tài khoản và dữ liệu của họ trên Firebase (cần xoá tay trong Firebase Console).
+- "Xoá ca" thực chất đặt số GV cần của tổ mình về 0; ca biến mất khi mọi tổ đều về 0.
+- Mật khẩu mặc định chung là điểm yếu cho tới khi GV đổi; web nhắc đổi khi GV còn dùng mật khẩu do khoa cấp.
