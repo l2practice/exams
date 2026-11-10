@@ -26,7 +26,7 @@ Theo bản thiết kế của khoa: **thanh bên xanh đêm** (logo DNU, menu), 
 - **Giảng viên:** Tổng quan · Đăng ký ca thi · Ca của tôi · Lịch sử gác thi · Cài đặt.
 - **Tổ trưởng** thêm nhóm **Quản lý**: Thống kê giảng viên · Thêm ca thi mới (tab *Nhập tay* / *Quét AI*) · Danh sách ca thi.
 Trên điện thoại thanh bên thành **thanh tab cố định ở đáy** (tổ trưởng có thêm một mục "Quản lý" và thanh chọn Thống kê | Thêm ca | Danh sách ở đầu trang); nút Đăng xuất nằm ở menu tên người dùng và trong Cài đặt. Chữ cỡ lớn cho người lớn tuổi.
-**Logo và ảnh nền (tuỳ chọn):** bỏ file `docs/logo.png` (logo DNU, nền trong hoặc trắng) và `docs/hero.jpg` (ảnh toà nhà trường) vào thư mục `docs/`; web tự dùng, không có thì hiện chữ "DNU" và nền xanh.
+**Logo và ảnh nền:** logo Đại học Đồng Nai ở `docs/logo.png` (dùng cho thanh bên, trang đăng nhập và biểu tượng tab). Muốn có ảnh toà nhà ở trang đăng nhập, bỏ file `docs/hero.jpg` vào thư mục `docs/`; không có thì nền xanh.
 
 ## 2. Đợt thi: 3 trạng thái (tab `Dot`, cột D)
 
@@ -61,7 +61,7 @@ Repo *Settings → Pages → Deploy from a branch → `main` → `/docs` → Sav
 4. **Gác thi → 0. Tạo đợt thi mới** (mã vd `HK1-2627`, tên vd `HỌC KỲ 1`). Điền **Hạn chót đăng ký** ở tab `Dot`, cột E.
 
 ### Bước 5 – Đồng bộ
-**Gác thi → 1. Đồng bộ lên Firebase.** Hộp thoại phải báo số đợt, số giảng viên và "Tài khoản đăng nhập: tạo mới N". Tài khoản mới có mật khẩu mặc định (`matKhauMacDinh`, hiện là `chuyen1`) và web sẽ nhắc GV đổi. Chạy lại bất cứ lúc nào (thêm GV, đổi vai trò, đổi hạn chót, đổi trạng thái đợt); ca thi và đăng ký không bị đụng tới.
+**Gác thi → 1. Đồng bộ lên Firebase.** Hộp thoại phải báo số đợt, số giảng viên và "Tài khoản đăng nhập: tạo mới N". Tài khoản mới có **mật khẩu mặc định** (hằng số `DEFAULT_PASSWORD` ở đầu `Code.gs`; muốn đổi mà không sửa code thì thêm Script Property `DEFAULT_PASSWORD`) và web mở sẵn trang Cài đặt để GV đổi. Mật khẩu này không hiện ở tab `CauHinh`, trên web hay trong README. Chạy lại bất cứ lúc nào (thêm GV, đổi vai trò, đổi hạn chót, đổi trạng thái đợt); ca thi và đăng ký không bị đụng tới.
 
 ### Bước 6 – Chạy thử trọn vòng
 1. Mở web bằng cửa sổ ẩn danh, đăng nhập bằng email tổ trưởng (lần đầu dùng mật khẩu do Khoa cấp, web mở sẵn trang Cài đặt để đổi).
@@ -80,6 +80,13 @@ Repo *Settings → Pages → Deploy from a branch → `main` → `/docs` → Sav
 - Chỉ tổ trưởng/quản trị gọi được (script kiểm tra phiên đăng nhập và vai trò), tối đa 40 lần quét/người/ngày. Ảnh được thu nhỏ trên máy trước khi gửi.
 - Giờ thi AI đọc được đổi thành số ca theo bảng giờ trong `CauHinh` (lệch tối đa 45 phút).
 
+## 3c0. Ca của tôi: bảng · danh sách · lịch tuần
+Trang **Ca của tôi** (và Lịch sử gác thi) có ba kiểu xem, nhớ lựa chọn của từng người:
+- **Bảng**: ngày, ca, khoá-ngành, môn, đợt, cột **Cảnh báo**, nút Huỷ.
+- **Danh sách**: nhóm theo ngày; ngày có từ 2 ca được đánh dấu vàng.
+- **Lịch tuần** kiểu Google Calendar: 7 cột ngày × 4 hàng ca, nút ‹ Tuần này › để đổi tuần, ca đã đăng ký hiện thành ô màu (bấm ca sắp tới để huỷ).
+**Cảnh báo:** ô vàng = ngày gác từ 2 ca trở lên; ô đỏ = trùng giờ. Khi đăng ký, hộp thoại xác nhận có khung **⚠ Lưu ý** nếu đã có ca khác cùng ngày (nhắc nếu hai ca liền nhau), dòng danh sách có nhãn "⚠ Cùng ngày", ca trùng giờ bị chặn ("Trùng giờ").
+
 ## 3c. Trang Đăng ký ca thi của giảng viên
 Ba kiểu xem (nhớ lựa chọn của từng người), cùng có bộ lọc đợt / khoá / ngành:
 - **Danh sách** (mặc định): mỗi ca một dòng (Ngày · Ca · Khoá · Ngành · Môn · đã đăng ký/cần của tổ mình · nút Đăng ký). Chỉ hiện ca sắp tới và cần tổ của giảng viên; gộp **mọi đợt** nên đợt sát hoặc trùng ngày nhau vẫn thấy chung.
@@ -89,6 +96,14 @@ Ba kiểu xem (nhớ lựa chọn của từng người), cùng có bộ lọc �
 1. **Lịch gác của bạn**: bảng các ca đã đăng ký, chèn **ca đang chọn** (tô màu) vào đúng vị trí theo thời gian, kèm câu "nằm sau ca … / trước ca … (cách n ngày)", cảnh báo **trùng giờ** và các ca đã có trong cùng ngày;
 2. **Chi tiết ngày**: bảng ca × Tổ 1 / Tổ 2 / Tổ 3 của cả ngày (gộp các đợt), ca của bạn trong ngày, danh sách người đã đăng ký ca đang chọn, nút Đăng ký / Huỷ.
 Hộp thoại **Xác nhận đăng ký** nêu rõ ngày, ca, giờ có mặt, khoá-ngành, môn và **ca gần nhất trước / sau** ca này.
+
+## 3d. Admin đăng nhập thế nào, và "vì sao chưa vào được"
+Không có trang đăng nhập riêng cho admin: admin là **một tài khoản giảng viên bình thường có vai trò ở cột E của `GiaoVien`** (`x` = quản trị toàn khoa, hoặc `tt1/tt2/tt3` = tổ trưởng). Việc của admin chia hai nơi: trên **Google Sheet** (menu Gác thi: tạo đợt, đồng bộ, xuất mẫu, mail) và trên **web** (Quản lý: thống kê, thêm ca). Để vào web cần đủ 4 thứ:
+1. Email có trong tab `GiaoVien` (đúng từng chữ, đúng email dùng để đăng nhập).
+2. Đã **tạo đợt thi** (tab `Dot`) và chạy **1. Đồng bộ lên Firebase** ít nhất một lần (lúc đó mới tạo tài khoản và hồ sơ).
+3. Cột E ghi vai trò nếu muốn thấy nhóm Quản lý.
+4. Đăng nhập bằng email đó và mật khẩu mặc định.
+Chưa vào được thì chạy menu **Gác thi → Kiểm tra đăng nhập của một email…**: báo từng điều kiện đã đủ chưa (✔ / ✘) và việc cần làm tiếp.
 
 ## 4. Quy trình mỗi đợt thi
 1. Admin: **Tạo đợt thi mới** (trạng thái `SOAN`) → Đồng bộ.

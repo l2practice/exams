@@ -1,7 +1,7 @@
 // Các trang của giảng viên: Tổng quan · Đăng ký ca thi · Ca của tôi · Lịch sử gác thi.
 import { doc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
-  db, S, $, esc, toast, ask, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, dmyOf, fmtLong, todayIso, khoaNam,
+  db, S, $, esc, toast, ask, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, dmyOf, fmtLong, todayIso, isoOf, khoaNam,
   statusOf, isRegOpen, STATUS_LABEL, needOf, visibleSlots, findSlot,
 } from "./core.js";
 import { icon } from "./icons.js";
@@ -10,9 +10,13 @@ const dotOf = (s) => S.dots.find((d) => d.id === s.dotId);
 const dotName = (id) => S.dots.find((d) => d.id === id)?.name || "";
 const openFirst = (a, b) => (isRegOpen(b) - isRegOpen(a)) || (b.order || 0) - (a.order || 0);
 const slotKey = (a, b) => a.date.localeCompare(b.date) || a.ca - b.ca || a.khoa - b.khoa || String(a.nganh).localeCompare(String(b.nganh));
+const sameDay = (s) => S.myYear.some((r) => r.date === s.date && r.slotId !== s.id);
 const myIds = () => new Set(S.myYear.map((r) => r.slotId));
 const dayLabel = (iso) => `${dowOf(iso)}, ${dmyOf(iso)}`;
 const slotLabel = (s) => (s ? `K${s.khoa} · ${s.nganh}` : "");
+const parseIso = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d); };
+const addDays = (iso, n) => { const d = parseIso(iso); d.setDate(d.getDate() + n); return isoOf(d); };
+const mondayOf = (iso) => { const d = parseIso(iso); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return isoOf(d); };
 const daysBetween = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
 
 /** Số người đã đăng ký theo từng ca và tổ của một đợt. */
@@ -69,22 +73,76 @@ export function overviewHtml() {
     </div>`;
 }
 
-// =====================================================================  Ca của tôi / Lịch sử
+// =====================================================================  Ca của tôi / Lịch sử (bảng · danh sách · lịch tuần)
+/** Cảnh báo cho các ca đã đăng ký: nhiều ca trong cùng một ngày; trùng giờ (cùng ngày và cùng ca). */
+function warnings(regs) {
+  const perDay = {}, perCell = {};
+  for (const r of regs) { perDay[r.date] = (perDay[r.date] || 0) + 1; perCell[r.date + "|" + r.ca] = (perCell[r.date + "|" + r.ca] || 0) + 1; }
+  return { perDay, perCell, multi: (r) => perDay[r.date] > 1, clash: (r) => perCell[r.date + "|" + r.ca] > 1 };
+}
+const warnPill = (w, r) => (w.clash(r) ? `<span class="pill bad">⚠ Trùng giờ</span>` : w.multi(r) ? `<span class="pill warn">⚠ ${w.perDay[r.date]} ca trong ngày</span>` : "");
+
 export function mineHtml(tab) {
   const today = todayIso(), prior = Number(S.me.prior || 0);
-  const regs = [...S.myYear].sort((a, b) => a.date.localeCompare(b.date) || a.ca - b.ca);
-  const list = regs.filter((r) => (tab === "past" ? r.date < today : r.date >= today));
-  const rows = list.map((r) => {
-    const s = findSlot(r.slotId), dot = dotOf({ dotId: r.dotId });
-    const canCancel = tab !== "past" && s && isRegOpen(dot);
-    return `<tr><td><b>${esc(dayLabel(r.date))}</b></td><td>Ca ${r.ca} · ${caInfo(r.ca).start}</td><td>${s ? `K${esc(s.khoa)} · ${esc(s.nganh)}` : ""}</td><td>${esc(s?.mon || "")}</td><td>${esc(dotName(r.dotId))}</td>
-      <td>${tab === "past" ? `<span class="pill ok">Đã gác</span>` : canCancel ? `<button class="danger sm" data-cancel="${esc(r.slotId)}">Huỷ</button>` : `<span class="pill">Đã chốt</span>`}</td></tr>`;
-  }).join("");
+  const regs = [...S.myYear].sort((a, b) => a.date.localeCompare(b.date) || a.ca - b.ca), w = warnings(regs);
   const nUp = regs.filter((r) => r.date >= today).length, nPast = regs.length - nUp;
-  return `<div class="toolbar"><div class="seg"><button class="${tab === "upcoming" ? "on" : ""}" data-go="me:mine">Sắp tới (${nUp})</button><button class="${tab === "past" ? "on" : ""}" data-go="me:history">Đã gác (${nPast + prior})</button></div></div>
-    ${tab === "past" && prior ? `<div class="card"><b>${prior} ca</b> <span class="muted">đã gác trước khi dùng app (chỉ có số lượng, không có chi tiết).</span></div>` : ""}
-    <div class="tbl-wrap"><table class="list"><thead><tr><th>Ngày</th><th>Ca</th><th>Khoá - Ngành</th><th>Môn</th><th>Đợt</th><th></th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="6" class="muted">${tab === "past" ? "Chưa có ca nào đã gác trên app." : "Bạn chưa có ca nào sắp tới."}</td></tr>`}</tbody></table></div>`;
+  const views = [["table", "Bảng"], ["list", "Danh sách"], ["week", "Lịch tuần"]];
+  const viewSeg = `<div class="seg">${views.map(([v, l]) => `<button class="${S.mineView === v ? "on" : ""}" data-mv="${v}">${l}</button>`).join("")}</div>`;
+  if (S.mineView === "week") return `<div class="toolbar">${weekNav()}<span class="grow"></span>${viewSeg}</div>` + weekHtml(regs, w, today);
+  const tabSeg = `<div class="seg"><button class="${tab === "upcoming" ? "on" : ""}" data-go="me:mine">Sắp tới (${nUp})</button><button class="${tab === "past" ? "on" : ""}" data-go="me:history">Đã gác (${nPast + prior})</button></div>`;
+  const list = regs.filter((r) => (tab === "past" ? r.date < today : r.date >= today));
+  const head = `<div class="toolbar">${tabSeg}<span class="grow"></span>${viewSeg}</div>` +
+    (tab === "past" && prior ? `<div class="card"><b>${prior} ca</b> <span class="muted">đã gác trước khi dùng app (chỉ có số lượng, không có chi tiết).</span></div>` : "") +
+    (tab !== "past" && list.some((r) => w.clash(r)) ? `<div class="warnbox bad">⚠ Có ca <b>trùng giờ</b>. Hãy huỷ một trong hai ca.</div>` : "") +
+    (tab !== "past" && list.some((r) => w.multi(r)) ? `<div class="warnbox">⚠ Có ngày bạn gác <b>từ 2 ca trở lên</b> (đánh dấu màu vàng). Hãy kiểm tra thời gian di chuyển và nghỉ giữa các ca.</div>` : "");
+  const act = (r) => {
+    const s = findSlot(r.slotId), canCancel = tab !== "past" && s && isRegOpen(dotOf({ dotId: r.dotId }));
+    return tab === "past" ? `<span class="pill ok">Đã gác</span>` : canCancel ? `<button class="danger sm" data-cancel="${esc(r.slotId)}">Huỷ</button>` : `<span class="pill">Đã chốt</span>`;
+  };
+  if (S.mineView === "list") {
+    let html = "", last = "";
+    for (const r of list) {
+      const s = findSlot(r.slotId);
+      if (r.date !== last) { last = r.date; html += `<div class="dayhead2"><b>${esc(dayLabel(r.date))}</b>${w.perDay[r.date] > 1 && tab !== "past" ? `<span class="pill warn">⚠ ${w.perDay[r.date]} ca trong ngày</span>` : ""}</div>`; }
+      html += `<div class="mrow ${w.clash(r) ? "clash" : w.multi(r) && tab !== "past" ? "multi" : ""}"><div class="mca"><b>Ca ${r.ca}</b><span>${caInfo(r.ca).start}</span></div>
+        <div class="mmain"><div><b>${s ? `K${esc(s.khoa)} · ${esc(s.nganh)}` : ""}</b> ${esc(s?.mon || "")}</div><div class="small">${esc(dotName(r.dotId))} · có mặt ${caInfo(r.ca).arrive}</div></div><div>${act(r)}</div></div>`;
+    }
+    return head + (html || `<div class="card center muted">${tab === "past" ? "Chưa có ca nào đã gác trên app." : "Bạn chưa có ca nào sắp tới."}</div>`);
+  }
+  const rows = list.map((r) => {
+    const s = findSlot(r.slotId);
+    return `<tr class="${tab !== "past" && w.multi(r) ? "multi" : ""}"><td><b>${esc(dayLabel(r.date))}</b></td><td>Ca ${r.ca} · ${caInfo(r.ca).start}</td><td>${s ? `K${esc(s.khoa)} · ${esc(s.nganh)}` : ""}</td><td>${esc(s?.mon || "")}</td><td>${esc(dotName(r.dotId))}</td>
+      <td>${tab !== "past" ? warnPill(w, r) : ""}</td><td>${act(r)}</td></tr>`;
+  }).join("");
+  return head + `<div class="tbl-wrap"><table class="list"><thead><tr><th>Ngày</th><th>Ca</th><th>Khoá - Ngành</th><th>Môn</th><th>Đợt</th><th>Cảnh báo</th><th></th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="7" class="muted">${tab === "past" ? "Chưa có ca nào đã gác trên app." : "Bạn chưa có ca nào sắp tới."}</td></tr>`}</tbody></table></div>`;
+}
+
+/** Lịch tuần kiểu Google Calendar: cột = 7 ngày, hàng = 4 ca trong ngày. */
+function weekNav() {
+  const start = S.weekStart || mondayOf(todayIso());
+  return `<div class="seg"><button data-wk="prev" aria-label="Tuần trước">‹</button><button data-wk="today">Tuần này</button><button data-wk="next" aria-label="Tuần sau">›</button></div>
+    <span class="pill p">${dmOf(start)} – ${dmyOf(addDays(start, 6))}</span>`;
+}
+function weekHtml(regs, w, today) {
+  if (!S.weekStart) S.weekStart = mondayOf((regs.find((r) => r.date >= today) || {}).date || today);   // mặc định: tuần có ca sắp tới gần nhất
+  const days = Array.from({ length: 7 }, (_, i) => addDays(S.weekStart, i));
+  const inWeek = regs.filter((r) => r.date >= days[0] && r.date <= days[6]);
+  const clash = inWeek.filter((r) => w.clash(r)), multiDays = [...new Set(inWeek.filter((r) => w.multi(r)).map((r) => r.date))];
+  const head = days.map((d) => `<th class="${d === today ? "today" : ""} ${parseIso(d).getDay() % 6 === 0 ? "we" : ""}">${esc(dowOf(d))}<br><b>${dmOf(d)}</b>${w.perDay[d] > 1 ? `<br><span class="pill warn">${w.perDay[d]} ca</span>` : ""}</th>`).join("");
+  const body = [1, 2, 3, 4].map((ca) => `<tr><th class="wkc">Ca ${ca}<br><small>${caInfo(ca).start}</small></th>${days.map((d) => {
+    const here = regs.filter((r) => r.date === d && r.ca === ca);
+    return `<td class="${d === today ? "today" : ""}">${here.map((r) => {
+      const s = findSlot(r.slotId), bad = here.length > 1, canCancel = r.date >= today && s && isRegOpen(dotOf({ dotId: r.dotId }));
+      return `<div class="evt ${bad ? "clash" : w.multi(r) ? "multi" : ""} ${r.date < today ? "past" : ""}" ${canCancel ? `data-cancel="${esc(r.slotId)}"` : ""} title="${esc(dotName(r.dotId))}${canCancel ? " · bấm để huỷ" : ""}">
+        <b>${s ? `K${esc(s.khoa)} · ${esc(s.nganh)}` : "Ca"}</b><span>${esc(s?.mon || "")}</span><span class="small">${caInfo(ca).start}</span></div>`;
+    }).join("")}</td>`;
+  }).join("")}</tr>`).join("");
+  return (clash.length ? `<div class="warnbox bad">⚠ <b>Trùng giờ</b> trong tuần này: ${[...new Set(clash.map((r) => `${dayLabel(r.date)} · Ca ${r.ca}`))].map(esc).join("; ")}.</div>` : "") +
+    (multiDays.length ? `<div class="warnbox">⚠ Tuần này có ${multiDays.length} ngày bạn gác từ 2 ca trở lên (${multiDays.map((d) => `${dowOf(d)} ${dmOf(d)}`).join(", ")}).</div>` : "") +
+    `<div class="tbl-wrap"><table class="wk"><thead><tr><th class="wkc"></th>${head}</tr></thead><tbody>${body}</tbody></table></div>
+    ${inWeek.length ? "" : `<p class="small center">Tuần này bạn chưa có ca nào. Bấm ‹ › để xem tuần khác.</p>`}
+    <p class="small">Bấm một ca sắp tới trên lịch để huỷ. Ô vàng: ngày có từ 2 ca; ô đỏ: trùng giờ.</p>`;
 }
 
 // =====================================================================  Đăng ký ca thi
@@ -136,7 +194,7 @@ function listRows(items, cnts, mine) {
         <div class="c-date rr-date">${esc(dayLabel(s.date))}</div>
         <div class="c-ca">Ca ${s.ca} · ${ci.start}</div><div class="c-k">K${esc(s.khoa)}</div><div class="c-n">${esc(s.nganh)}</div>
         <div class="c-sum small">Ca ${s.ca} · ${ci.start} · K${esc(s.khoa)} · ${esc(s.nganh)} · đã ĐK ${st.taken}/${st.need}</div>
-        <div class="c-meta">${esc(s.mon || "—")}${multi ? ` <span class="crowmeta">· ${esc(dotName(s.dotId))}</span>` : ""}</div>
+        <div class="c-meta">${esc(s.mon || "—")}${multi ? ` <span class="crowmeta">· ${esc(dotName(s.dotId))}</span>` : ""}${st.k !== "mine" && sameDay(s) ? ` <span class="pill warn">⚠ Cùng ngày</span>` : ""}</div>
         <div class="c-cnt">${st.need ? `${st.taken} / ${st.need}` : "—"}</div>
         <div class="act c-st">${act}</div></div>`;
     }).join("") + `</div>`;
@@ -148,6 +206,16 @@ function neighbors(p) {
   const key = (x) => `${x.date}|${String(x.ca).padStart(2, "0")}`, k0 = key(p);
   const others = S.myYear.filter((r) => r.slotId !== p.id).sort((a, b) => key(a).localeCompare(key(b)));
   return { prev: [...others].reverse().find((r) => key(r) < k0), next: others.find((r) => key(r) > k0), same: others.filter((r) => r.date === p.date), clash: others.find((r) => key(r) === k0), count: others.length };
+}
+/** Cảnh báo trước khi đăng ký ca s: đã có ca khác cùng ngày (và liền kề nhau), hoặc trùng giờ. */
+function warnText(s) {
+  const nb = neighbors(s), parts = [];
+  if (nb.clash) parts.push(`TRÙNG GIỜ với ca bạn đã đăng ký: ${regText(nb.clash)}.`);
+  if (nb.same.length && !nb.clash) {
+    parts.push(`Bạn đã có ca khác trong ngày này: ${nb.same.map((r) => `Ca ${r.ca} (${caInfo(r.ca).start}) ${slotLabel(findSlot(r.slotId))}`).join("; ")}.`);
+    if (nb.same.some((r) => Math.abs(r.ca - s.ca) === 1)) parts.push("Hai ca liền nhau, hãy chắc chắn kịp thời gian.");
+  }
+  return parts.join(" ");
 }
 const regText = (r) => `${dayLabel(r.date)} · Ca ${r.ca}`;
 function positionNote(p, mine) {
@@ -173,7 +241,7 @@ function timelineCard(p, mine) {
     <td>${e.cand ? `<span class="tag cand">${e.me ? "Đang xem" : "Ca đang chọn"}</span>` : `<span class="pill p">Đã đăng ký</span>`}</td></tr>`).join("");
   return `<div class="card"><div class="card-h"><div><h2>Lịch gác của bạn</h2><div class="small">Vị trí của ca đang chọn so với các ca đã đăng ký</div></div></div>
     <div class="tbl-wrap pvwrap" id="pvwrap"><table class="list pvt"><thead><tr><th>Ngày</th><th>Ca</th><th>Khoá - Ngành</th><th>Môn</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="posnote">${positionNote(p, mine)}</div></div>`;
+    <div class="posnote ${neighbors(p).same.length || neighbors(p).clash ? "warn" : ""}">${positionNote(p, mine)}</div></div>`;
 }
 
 function dayCard(all, p, cnts, mine) {
@@ -188,7 +256,7 @@ function dayCard(all, p, cnts, mine) {
   return `<div class="card"><div class="card-h"><h2>Chi tiết ngày: ${esc(dayLabel(p.date))}</h2></div>
     <table class="dd"><thead><tr><th>Ca</th><th>Khoá</th><th>Ngành</th><th>Tổ 1</th><th>Tổ 2</th><th>Tổ 3</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="small" style="margin-bottom:4px"><b>Ca của bạn trong ngày này</b></div>
-    ${mineToday.length ? `<div class="mybox">${mineToday.map((r) => `✔ Bạn đã đăng ký: Ca ${r.ca} – ${esc(slotLabel(findSlot(r.slotId)))}${findSlot(r.slotId)?.mon ? " – " + esc(findSlot(r.slotId).mon) : ""}`).join("<br>")}</div>` : `<div class="mybox none">Bạn chưa đăng ký ca nào trong ngày này.</div>`}
+    ${mineToday.length ? `<div class="mybox ${mine.has(p.id) ? "" : "warn"}">${mine.has(p.id) ? "" : "⚠ Bạn đã có ca khác trong ngày này:<br>"}${mineToday.map((r) => `✔ Bạn đã đăng ký: Ca ${r.ca} – ${esc(slotLabel(findSlot(r.slotId)))}${findSlot(r.slotId)?.mon ? " – " + esc(findSlot(r.slotId).mon) : ""}`).join("<br>")}</div>` : `<div class="mybox none">Bạn chưa đăng ký ca nào trong ngày này.</div>`}
     <div class="small"><b>Danh sách đã đăng ký – Ca ${p.ca} (${esc(slotLabel(p))})</b></div>
     ${names.length ? `<ol class="names">${names.map((r) => `<li>${esc(r.name)} <span class="small">(${esc(TO_SHORT[r.to] || "")})</span></li>`).join("")}</ol>` : `<p class="small" style="margin:4px 0 10px">Chưa có ai đăng ký ca này.</p>`}
     ${act}</div>`;
@@ -263,7 +331,7 @@ const posRows = (s) => {
 
 async function register(s) {
   const to = S.me.to, email = S.me.email, ci = caInfo(s.ca);
-  if (!(await ask({ title: "Xác nhận đăng ký", text: "Bạn có chắc chắn muốn đăng ký ca thi sau không?", ok: "Đăng ký", cancel: "Huỷ", ic: "calendarCheck",
+  if (!(await ask({ title: "Xác nhận đăng ký", text: "Bạn có chắc chắn muốn đăng ký ca thi sau không?", ok: "Đăng ký", cancel: "Huỷ", ic: "calendarCheck", warn: warnText(s),
     rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · bắt đầu ${ci.start}`], ["Có mặt tại HĐ thi", ci.arrive], ["Khoá - Ngành", `Khoá ${s.khoa} · ${s.nganh} · Tổ ${TO_SHORT[to]}`], ["Môn", s.mon || ""], ...posRows(s)] }))) return;
   const regId = `${s.date}_${s.ca}__${email}`, need = needOf(s, to);
   const used = new Set((S.regsBy[s.dotId] || []).filter((r) => r.slotId === s.id && r.to === to).map((r) => r.k));
@@ -310,6 +378,12 @@ export function meClick(e, { store }) {
       if (el.dataset.reg) register(s); else cancel(s);
     }
     return true;
+  }
+  if ((el = e.target.closest("[data-mv]"))) { S.mineView = el.dataset.mv; store.set("gacthi.mineView", S.mineView); S.render(); return true; }
+  if ((el = e.target.closest("[data-wk]"))) {
+    const base = S.weekStart || mondayOf(todayIso());
+    S.weekStart = el.dataset.wk === "today" ? mondayOf(todayIso()) : addDays(base, el.dataset.wk === "next" ? 7 : -7);
+    S.render(); return true;
   }
   if ((el = e.target.closest("[data-rv]"))) { S.regView = el.dataset.rv; store.set("gacthi.regView", S.regView); S.render(); return true; }
   if ((el = e.target.closest("[data-pick]"))) {              // bấm một dòng / ô: xem trước ở trên

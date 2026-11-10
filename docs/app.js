@@ -39,6 +39,7 @@ $("heroIc").innerHTML = LOGO; $("icMail").innerHTML = IC.mail; $("icLock").inner
 
 $("email").value = store.get(EMAIL_KEY);                // ô email nhớ email lần trước
 S.regView = ["list", "matrix", "grid"].includes(store.get("gacthi.regView")) ? store.get("gacthi.regView") : "list";
+S.mineView = ["table", "list", "week"].includes(store.get("gacthi.mineView")) ? store.get("gacthi.mineView") : "table";
 $("btnEye").onclick = () => { const p = $("pw"); p.type = p.type === "password" ? "text" : "password"; $("btnEye").setAttribute("aria-label", p.type === "password" ? "Hiện mật khẩu" : "Ẩn mật khẩu"); };
 
 $("loginForm").onsubmit = async (e) => {

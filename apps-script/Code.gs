@@ -18,6 +18,10 @@ const CA_DEFAULT = { 1: ['07:30', '07:15'], 2: ['09:00', '08:45'], 3: ['13:30', 
 const DOT_HEADERS = ['Mã đợt', 'Tên đợt thi', 'Học kỳ (in trên mẫu)', 'Trạng thái (SOAN / MO / DONG)', 'Hạn chót đăng ký', 'Ghi chú', 'Năm học'];
 const DOT_STATUS = ['SOAN', 'MO', 'DONG']; // SOAN: tổ trưởng soạn lịch, GV chưa đăng ký được · MO: GV đăng ký · DONG: khoá
 const MAX_RESET_PER_DAY = 80;
+// Mật khẩu mặc định của tài khoản giảng viên mới. Chỉ nằm ở đây (không hiện ở tab CauHinh hay trên web).
+// Có thể đổi mà không sửa code: Project Settings → Script Properties → thêm DEFAULT_PASSWORD (tối thiểu 6 ký tự).
+const DEFAULT_PASSWORD = 'chuyen1';
+const defaultPassword = () => PropertiesService.getScriptProperties().getProperty('DEFAULT_PASSWORD') || DEFAULT_PASSWORD;
 
 // ---------------------------------------------------------------- Menu
 function onOpen() {
@@ -29,6 +33,7 @@ function onOpen() {
     .addItem('3. Lưu file .xlsx vào Drive', 'menuXlsx')
     .addSeparator()
     .addItem('Tạo tài khoản đăng nhập cho GV (mật khẩu mặc định)', 'menuAccounts')
+    .addItem('Kiểm tra đăng nhập của một email…', 'menuCheckLogin')
     .addItem('Gửi thử mail nhắc cho tôi', 'menuTestMail')
     .addItem('Cài lịch gửi mail nhắc (mỗi giờ)', 'installTriggers')
     .addItem('Tạo / cập nhật các tab cố định', 'setupSheets')
@@ -53,7 +58,6 @@ function setupSheets() {
       ['nhacTruocGio', '18', 'Gửi mail nhắc trước giờ CÓ MẶT bao nhiêu giờ'],
       ['tenNguoiGui', 'Khoa Ngoại ngữ - ĐH Đồng Nai', 'Tên hiển thị khi gửi mail (nếu GV chưa có tổ trưởng)'],
       ['webUrl', '', 'Link web đăng ký (nút trong mail)'],
-      ['matKhauMacDinh', 'chuyen1', 'Mật khẩu mặc định khi tạo tài khoản cho GV (GV tự đổi trong Cài đặt trên web; tối thiểu 6 ký tự)'],
     ];
     [1, 2, 3, 4].forEach((c) => {
       rows.push([`ca${c}_batDau`, CA_DEFAULT[c][0], `Ca ${c}: giờ bắt đầu`]);
@@ -98,7 +102,6 @@ function getCfg() {
   o.namHoc = String(o.namHoc);
   o.geminiModel = String(o.geminiModel || 'gemini-2.5-flash');          // đổi trong CauHinh nếu Google đã ngừng model này
   o.FIREBASE_API_KEY = String(o.FIREBASE_API_KEY || 'AIzaSyBt_oW_FZrV06TbBOrGH--4x4gG2oVxkJQ'); // khoá Web của Firebase (công khai), dùng để kiểm tra phiên đăng nhập
-  o.matKhauMacDinh = String(o.matKhauMacDinh || 'chuyen1');
   o.ca = {};
   [1, 2, 3, 4].forEach((c) => (o.ca[c] = { start: hhmm(o[`ca${c}_batDau`]) || CA_DEFAULT[c][0], arrive: hhmm(o[`ca${c}_coMat`]) || CA_DEFAULT[c][1] }));
   return o;
@@ -214,7 +217,7 @@ function ensureAccounts(teachers) {
   const done = new Set(JSON.parse(props.getProperty('acctDone') || '[]'));
   const out = { created: 0, existing: 0, failed: [], createdEmails: [] };
   teachers.filter((t) => !done.has(t.email)).forEach((t) => {
-    const r = idtFetch('accounts:signUp', { email: t.email, password: cfg.matKhauMacDinh, emailVerified: true, displayName: t.name, targetProjectId: pid });
+    const r = idtFetch('accounts:signUp', { email: t.email, password: defaultPassword(), emailVerified: true, displayName: t.name, targetProjectId: pid });
     if (r.code < 300) { out.created++; out.createdEmails.push(t.email); done.add(t.email); return; }
     const msg = (r.json.error && r.json.error.message) || String(r.code);
     if (msg.indexOf('EMAIL_EXISTS') === 0) {
@@ -222,7 +225,7 @@ function ensureAccounts(teachers) {
       const l = idtFetch(`projects/${pid}/accounts:lookup`, { email: [t.email] });
       const u = l.json.users && l.json.users[0];
       if (u && !u.emailVerified) {
-        const up = idtFetch(`projects/${pid}/accounts:update`, { localId: u.localId, emailVerified: true, password: cfg.matKhauMacDinh });
+        const up = idtFetch(`projects/${pid}/accounts:update`, { localId: u.localId, emailVerified: true, password: defaultPassword() });
         if (up.code >= 300) { out.failed.push(`${t.email}: không xác thực được (${up.code})`); return; }
         out.createdEmails.push(t.email);
       }
@@ -236,6 +239,32 @@ function menuAccounts() {
   const r = ensureAccounts(readTeachers());
   if (r.createdEmails.length) fsCommit(r.createdEmails.map((e) => ({ path: 'teachers/' + e, data: { pwTemp: true } })));
   SpreadsheetApp.getUi().alert(`Tài khoản: tạo mới ${r.created}, đã có ${r.existing}` + (r.failed.length ? `\n\nLỗi:\n${r.failed.slice(0, 10).join('\n')}` : ''));
+}
+
+/** Hỏi một email rồi báo: có trong GiaoVien chưa, đã có tài khoản Firebase chưa, đã có hồ sơ trên Firestore chưa, vai trò gì. */
+function menuCheckLogin() {
+  const ui = SpreadsheetApp.getUi();
+  const a = ui.prompt('Kiểm tra đăng nhập', 'Nhập email cần kiểm tra:', ui.ButtonSet.OK_CANCEL);
+  if (a.getSelectedButton() !== ui.Button.OK) return;
+  const email = a.getResponseText().trim().toLowerCase();
+  const cfg = getCfg(), pid = cfg.FIREBASE_PROJECT_ID, lines = [];
+  const role = (t) => (t.admin ? 'x (quản trị toàn khoa)' : t.leadTo ? `tt${t.leadTo} (tổ trưởng)` : 'tổ viên');
+  const t = readTeachers().find((x) => x.email === email);
+  lines.push(t ? `✔ Có trong tab GiaoVien: ${t.name}, tổ ${t.to}, vai trò ${role(t)}.` : '✘ KHÔNG có trong tab GiaoVien → thêm một dòng cho email này (cột E: tt1/tt2/tt3 hoặc x nếu là quản lý).');
+  const dots = fsList('dots');
+  lines.push(dots.length ? `✔ Firebase đã có ${dots.length} đợt thi.` : '✘ Firebase chưa có đợt thi nào → chưa Đồng bộ lần nào (tạo đợt rồi chạy "1. Đồng bộ lên Firebase").');
+  const l = idtFetch(`projects/${pid}/accounts:lookup`, { email: [email] });
+  const u = l.json.users && l.json.users[0];
+  lines.push(u ? `✔ Có tài khoản đăng nhập trên Firebase${u.emailVerified ? '' : ' nhưng CHƯA xác thực email → chạy Đồng bộ để sửa'}.` : '✘ Chưa có tài khoản đăng nhập trên Firebase → chạy "1. Đồng bộ lên Firebase".');
+  let doc = null;
+  try { doc = fromFields(fsFetch(`${fsBase()}/teachers/${encodeURIComponent(email)}`).fields || {}); } catch (e) { /* chưa có */ }
+  if (doc) {
+    lines.push(`✔ Có hồ sơ trên Firestore: tổ ${doc.to}, vai trò ${doc.admin ? 'x' : doc.leadTo ? 'tt' + doc.leadTo : 'tổ viên'}${doc.pwTemp ? ', đang dùng mật khẩu mặc định' : ''}.`);
+    if (t && (!!doc.admin !== !!t.admin || Number(doc.leadTo || 0) !== t.leadTo)) lines.push('⚠ Vai trò trên Firestore KHÁC tab GiaoVien → chạy "1. Đồng bộ lên Firebase".');
+  } else lines.push('✘ Chưa có hồ sơ trên Firestore → chạy "1. Đồng bộ lên Firebase".');
+  const ok = t && dots.length && u && u.emailVerified && doc;
+  lines.push('', ok ? `ĐĂNG NHẬP ĐƯỢC: email ${email} + mật khẩu mặc định (nếu chưa đổi).` : 'CHƯA đăng nhập được, làm theo các dòng ✘ ở trên.');
+  ui.alert(lines.join('\n'));
 }
 
 // ---------------------------------------------------------------- Đồng bộ lên

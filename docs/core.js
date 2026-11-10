@@ -24,6 +24,7 @@ export const S = {
   dots: [], slotsBy: {}, regsBy: {}, roster: [], teachersAll: [], myYear: [],
   regView: "list",                              // trang Đăng ký: "list" danh sách | "matrix" bảng theo đợt | "grid" bảng giảng viên
   pick: null,                                   // ca đang chọn để xem trước
+  mineView: "table", weekStart: null,           // trang Ca của tôi: "table" | "list" | "week" (lịch tuần) và ngày thứ Hai của tuần đang xem
   route: "me:overview",                        // trang đang mở (mục trên thanh bên trái)
   fDot: "all", fKhoa: "all", fNganh: "all", gvFilter: "all", openGv: null,
   unsub: [], unsubDots: {},
@@ -92,7 +93,7 @@ export const chipsHtml = (items, cur, attr) =>
  * Hộp thoại xác nhận (thay cho confirm() mặc định của trình duyệt): chữ lớn, nút to, hiện rõ từng thông tin.
  * rows = [[nhãn, giá trị]]. Trả Promise<boolean>. Esc hoặc bấm nền = không đồng ý.
  */
-export function ask({ title, rows = [], text = "", ok = "Đồng ý", cancel = "Không", danger = false, ic = "tasks" }) {
+export function ask({ title, rows = [], text = "", warn = "", ok = "Đồng ý", cancel = "Không", danger = false, ic = "tasks" }) {
   return new Promise((resolve) => {
     const bg = document.createElement("div");
     bg.className = "aw-od-bg";
@@ -101,6 +102,7 @@ export function ask({ title, rows = [], text = "", ok = "Đồng ý", cancel = "
       <h2 id="askT">${esc(title)}</h2>
       ${text ? `<p class="aw-od-sub">${esc(text)}</p>` : ""}
       ${rows.length ? `<dl class="aw-od-rows">${rows.filter((r) => r[1]).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : ""}
+      ${warn ? `<div class="aw-od-warn"><b>⚠ Lưu ý</b><br>${esc(warn)}</div>` : ""}
       <div class="aw-od-foot"><button type="button" id="askNo">${esc(cancel)}</button><button type="button" id="askOk" class="${danger ? "danger" : "primary"}">${esc(ok)}</button></div>
     </div>`;
     document.body.appendChild(bg);
