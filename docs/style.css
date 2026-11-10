@@ -349,6 +349,12 @@ table.scan input[type=checkbox]{width:20px;height:20px;accent-color:var(--p)}
 .inp-eye svg{width:20px;height:20px}
 .auth-notes{margin:18px 0 0;padding:14px 16px 14px 34px;border-radius:14px;background:#F2F8F6;color:var(--ink-3);font-size:.82rem;line-height:1.65}
 form > button:not(.link):not(.inp-eye){margin-top:12px}
+@media(min-width:861px) and (max-width:1180px){
+  .auth{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .auth-hero{padding:28px 32px;gap:22px}
+  .auth-side{padding:24px}
+  .auth-card{padding:32px}
+}
 @media(max-width:860px){
   .auth{grid-template-columns:1fr}
   .auth-hero{padding:22px 22px 26px;gap:16px;min-height:0}
