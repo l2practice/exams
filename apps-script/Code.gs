@@ -3,7 +3,7 @@
  *
  * Phân vai:
  *  - Google Sheet (admin): danh sách GV + vai trò, các đợt thi, cấu hình, xuất MẪU nộp, mail nhắc.
- *  - Web (tổ trưởng / GV): tổ trưởng THÊM CA THI trực tiếp trên web; GV đăng ký. Dữ liệu nằm ở Firestore.
+ *  - Web (tổ trưởng / GV): tổ trưởng THÊM CA THI trực tiếp trên web; GV đăng ký, đổi hoặc huỷ qua Apps Script. Dữ liệu nằm ở Firestore.
  *
  * Tab: CauHinh | GiaoVien | Dot | NhatKyNhac (cố định);  DangKy_<mã> | XuatMau_<mã> (tự sinh theo đợt)
  * Cột E của GiaoVien: tt1 / tt2 / tt3 = tổ trưởng của tổ Chuyên 1 / Chuyên 2 / Cơ bản; x = quản trị toàn khoa; trống = tổ viên.
@@ -397,6 +397,7 @@ function doPost(e) {
     const req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     if (req.action === 'reset') return out(resetPassword(String(req.email || '').trim().toLowerCase()));
     if (req.action === 'scan') return out(scanSchedule(req));
+    if (req.action === 'shift') return out(changeShift(req));
     return out({ ok: false, error: 'unknown action' });
   } catch (err) { return out({ ok: false, error: 'bad request' }); }
 }
@@ -489,6 +490,13 @@ function fsCommit(writes) {
     });
   }
 }
+/** Atomic mix of upserts and deletes for member shift operations. */
+function fsCommitOps(ops) {
+  const root = `projects/${getCfg().FIREBASE_PROJECT_ID}/databases/(default)/documents/`;
+  fsFetch(fsBase() + ':commit', 'post', { writes: ops.map((op) => op.delete
+    ? { delete: root + op.path }
+    : { update: { name: root + op.path, fields: fields(op.data) }, updateMask: { fieldPaths: Object.keys(op.data) } }) });
+}
 function fsDelete(paths) {
   const root = `projects/${getCfg().FIREBASE_PROJECT_ID}/databases/(default)/documents/`;
   for (let i = 0; i < paths.length; i += 400) fsFetch(fsBase() + ':commit', 'post', { writes: paths.slice(i, i + 400).map((p) => ({ delete: root + p })) });
@@ -501,6 +509,104 @@ function fsList(col) {
     token = r.nextPageToken || '';
   } while (token);
   return out;
+}
+
+// ---------------------------------------------------------------- Đăng ký / đổi / huỷ ca (server authoritative)
+function readDoc(path) {
+  try { const d = fsFetch(fsBase() + '/' + path); return Object.assign({ _id: path.split('/').pop() }, fromFields(d.fields || {})); }
+  catch (e) { return null; }
+}
+function shiftError(message) { return { ok: false, error: message }; }
+function shiftStart(slot, cfg) { return startDate(cfg, slot.date, slot.ca); }
+function validateShiftWindow(slot, mode, cfg) {
+  const starts = shiftStart(slot, cfg), now = new Date();
+  if (starts <= now) return 'Ca thi đã bắt đầu hoặc đã qua.';
+  if (mode === 'cancel' && starts.getTime() - now.getTime() < 48 * 60 * 60 * 1000)
+    return 'Chỉ được huỷ ca trước thời điểm bắt đầu ít nhất 48 giờ. Bạn có thể chọn người thay thế để đổi ca.';
+  return '';
+}
+function validTeacherEmail(email) { return /^[^@\s]+@[^@\s]+$/.test(email); }
+function shiftRegId(slot, email) { return `${slot.date}_${slot.ca}__${email}`; }
+function shiftMail(slot, action, from, replacement, bucket) {
+  const lead = readTeachers().find((t) => t.leadTo === bucket);
+  if (!lead) return false;
+  const cfg = getCfg(), date = dateLongVN(slot.date), start = cfg.ca[slot.ca].start;
+  const subject = action === 'exchange' ? `[Gác thi] Đổi người gác · ${date} · Ca ${slot.ca}` : `[Gác thi] Huỷ ca · ${date} · Ca ${slot.ca}`;
+  const lines = action === 'exchange'
+    ? `Thầy/cô ${from.name} đã chuyển ca gác thi cho thầy/cô ${replacement.name}.\n\n`
+    : `Thầy/cô ${from.name} đã huỷ ca gác thi. Ca này đang trống người.\n\n`;
+  MailApp.sendEmail({ to: lead.email, name: cfg.tenNguoiGui || 'Gác thi DNU', subject,
+    body: `${lines}Ngày: ${date}\nCa ${slot.ca}, bắt đầu lúc ${start}\nKhoá ${slot.khoa} · ${slot.nganh}${slot.mon ? ` · ${slot.mon}` : ''}\nTổ phụ trách chỉ tiêu: ${TO_LABEL[bucket]}\n\nVui lòng kiểm tra số người đã đăng ký trong ứng dụng.` });
+  return true;
+}
+/** All enrollment/transfer/cancellation mutations are serialized and validated on the server. */
+function changeShift(req) {
+  const cfg = getCfg(), email = verifyIdToken(req.idToken, cfg);
+  if (!email) return shiftError('auth');
+  const teacher = readDoc('teachers/' + email);
+  if (!teacher || ![1, 2, 3].includes(Number(teacher.to))) return shiftError('teacher');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const mode = String(req.mode || ''), slotIdReq = String(req.slotId || '');
+    if (!['register', 'exchange', 'cancel'].includes(mode)) return shiftError('mode');
+    const slot = fsList('slots').find((s) => s._id === slotIdReq && s.active !== false);
+    if (!slot) return shiftError('slot');
+    const regs = fsList('regs');
+    const current = regs.find((r) => r.slotId === slot._id && r.email === email);
+    if (mode !== 'register' && !current) return shiftError('registration');
+    const windowError = validateShiftWindow(slot, mode, cfg);
+    if (windowError) return shiftError(windowError);
+    const dot = readDoc('dots/' + slot.dotId);
+    if (!dot) return shiftError('dot');
+
+    if (mode === 'register') {
+      if (dot.status !== 'MO' || (dot.deadline && new Date(dot.deadline).getTime() <= Date.now())) return shiftError('closed');
+      if (regs.some((r) => r.email === email && r.date === slot.date && Number(r.ca) === Number(slot.ca))) return shiftError('overlap');
+      const poolOrder = [Number(teacher.to), ...[1, 2, 3].filter((t) => t !== Number(teacher.to))];
+      let bucket = 0, k = 0;
+      for (const t of poolOrder) {
+        const used = new Set(regs.filter((r) => r.slotId === slot._id && Number(r.to) === t).map((r) => Number(r.k)));
+        const need = Number((slot.need || {})['t' + t] || 0);
+        for (let i = 1; i <= need; i++) if (!used.has(i)) { bucket = t; k = i; break; }
+        if (bucket) break;
+      }
+      if (!bucket) return shiftError('full');
+      const regId = shiftRegId(slot, email), claimId = `${slot._id}_t${bucket}_${k}`;
+      const row = { slotId: slot._id, dotId: slot.dotId, namHoc: slot.namHoc, date: slot.date, ca: slot.ca,
+        email, name: teacher.name, to: bucket, homeTo: Number(teacher.to), k, claimId, createdAt: new Date() };
+      fsCommit([{ path: 'claims/' + claimId, data: { slotId: slot._id, dotId: slot.dotId, to: bucket, k, email, regId, namHoc: slot.namHoc } },
+        { path: 'regs/' + regId, data: row }]);
+      return { ok: true, mode, bucket };
+    }
+
+    const cutoff = validateShiftWindow(slot, mode, cfg);
+    if (cutoff) return shiftError(cutoff);
+    const claimId = current.claimId || `${slot._id}_t${current.to}_${current.k}`;
+    const replacementEmail = String(req.replacementEmail || '').trim().toLowerCase();
+    let replacement = null;
+    if (mode === 'exchange') {
+      if (!validTeacherEmail(replacementEmail) || replacementEmail === email) return shiftError('replacement');
+      replacement = readDoc('teachers/' + replacementEmail);
+      if (!replacement || ![1, 2, 3].includes(Number(replacement.to))) return shiftError('replacement');
+      if (regs.some((r) => r.email === replacementEmail && r.date === slot.date && Number(r.ca) === Number(slot.ca))) return shiftError('replacement_overlap');
+      const nextId = shiftRegId(slot, replacementEmail);
+      const claim = { slotId: slot._id, dotId: slot.dotId, to: Number(current.to), k: Number(current.k), email: replacementEmail, regId: nextId, namHoc: slot.namHoc };
+      const newReg = { ...current, email: replacementEmail, name: replacement.name, homeTo: Number(replacement.to), createdAt: new Date() };
+      delete newReg._id;
+      fsCommitOps([{ delete: true, path: 'regs/' + current._id }, { path: 'claims/' + claimId, data: claim }, { path: 'regs/' + nextId, data: newReg }]);
+      let mailSent = false;
+      try { mailSent = shiftMail(slot, 'exchange', teacher, replacement, Number(current.to)); } catch (e) { mailSent = false; }
+      return { ok: true, mode, mailSent };
+    }
+
+    fsCommitOps([{ delete: true, path: 'regs/' + current._id }, { delete: true, path: 'claims/' + claimId }]);
+    let mailSent = false;
+    try { mailSent = shiftMail(slot, 'cancel', teacher, null, Number(current.to)); } catch (e) { mailSent = false; }
+    return { ok: true, mode, mailSent };
+  } catch (e) {
+    return shiftError(String(e.message || e));
+  } finally { lock.releaseLock(); }
 }
 
 // ---------------------------------------------------------------- Kéo đăng ký về
