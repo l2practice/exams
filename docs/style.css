@@ -425,3 +425,5 @@ table.wk tbody td{height:84px}
   .stats-tbl td:nth-child(2),.stats-tbl td .link{white-space:normal;text-align:left}
   .nav-item.also{color:var(--p-hv);font-weight:700}
 }
+.chip-add{min-height:0;padding:6px 14px;border:1px dashed var(--p-hv,#168F89);background:transparent;color:var(--p-hv,#168F89);border-radius:999px;font-weight:600;font-size:.9rem;white-space:nowrap}
+#otherBox{margin-top:10px}

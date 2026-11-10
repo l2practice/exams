@@ -137,11 +137,11 @@ export function addHtml() {
       <label>Khoá</label>
       <div class="row">${khoaList().map((k) => `<label class="check"><input type="checkbox" name="addKhoa" value="${k}"> Khoá ${k}${khoaNam(k) ? ` (năm ${khoaNam(k)})` : ""}</label>`).join("")}</div>
       <label>Ngành</label>
-      <div class="row">${NGANH.map((n) => `<label class="check"><input type="checkbox" name="addNganh" value="${n}"> ${n}</label>`).join("")}</div>
-      </div>
-      <div class="other-box">
-        <label for="addDonVi">Hoặc ca thi của <b>khoa khác</b> <span class="small">(đi gác thi cho khoa khác; tự ghi tên khoa, khi đó bỏ qua Khoá/Ngành ở trên)</span></label>
+      <div class="row">${NGANH.map((n) => `<label class="check"><input type="checkbox" name="addNganh" value="${n}"> ${n}</label>`).join("")}<button type="button" class="chip-add" id="btnAddOther">+ Add others</button></div>
+      <div id="otherBox" hidden>
+        <label for="addDonVi">Tên khoa khác <span class="small">(đi gác thi cho khoa khác; khi điền tên, hệ thống bỏ qua Khoá/Ngành đã chọn)</span></label>
         <input class="field" id="addDonVi" type="text" maxlength="60" placeholder="Ví dụ: Khoa Kinh tế">
+      </div>
       </div>
       <label for="addMon">Môn thi <span class="small">(tuỳ chọn)</span></label>
       <input class="field" id="addMon" type="text">
@@ -501,6 +501,7 @@ async function delRow(id) {
 
 /** Gọi từ app.js cho mọi cú bấm trong trang; trả true nếu là thao tác của tổ trưởng. */
 export function manageClick(e) {
+  if (e.target.closest("#btnAddOther")) { const b = $("otherBox"); b.hidden = !b.hidden; if (!b.hidden) $("addDonVi").focus(); else $("addDonVi").value = ""; return true; }
   let el;
   if ((el = e.target.closest("[data-at]"))) {                      // chuyển tab Nhập tay / Quét AI (không vẽ lại trang để khỏi mất dữ liệu đang nhập)
     const scan = el.dataset.at === "scan";
