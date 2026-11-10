@@ -104,10 +104,10 @@ $("btnSetClose").onclick = () => go(isManager() ? "mg:stats" : "me:overview");
 
 const initials = (n) => String(n || "?").trim().split(/\s+/).slice(-2).map((w) => w[0] || "").join("").toUpperCase();
 const roleLabel = () => (S.me.admin ? "Quản trị toàn khoa" : S.me.leadTo ? `Tổ trưởng – Tổ ${TO_LABEL[S.me.leadTo]}` : `Giảng viên – Tổ ${TO_LABEL[S.me.to] || ""}`);
-const scopeText = () => (S.me.admin ? "Toàn khoa (cả 3 tổ)" : `Tổ ${TO_LABEL[S.me.leadTo]}`);
+const scopeText = () => (S.me.admin ? "Phạm vi: cả 3 tổ" : "Phạm vi: tổ mình");
 
 function navHtml() {
-  const item = (k, cls = "") => `<button class="nav-item ${cls} ${S.route === k ? "active" : ""}" data-nav="${k}" ${S.route === k ? 'aria-current="page"' : ""}>${icon(ROUTES[k].icon)}<span>${esc(ROUTES[k].short)}</span></button>`;
+  const item = (k, cls = "") => `<button class="nav-item ${cls} ${S.route === k ? "active" : k === "me:mine" && S.route === "me:history" ? "also" : ""}" data-nav="${k}" ${S.route === k ? 'aria-current="page"' : ""}>${icon(ROUTES[k].icon)}<span>${esc(ROUTES[k].short)}</span></button>`;
   const full = (k, cls = "") => item(k, cls).replace(`<span>${esc(ROUTES[k].short)}</span>`, `<span>${esc(ROUTES[k].label)}</span>`);
   let h = full("me:overview") + full("me:register") + full("me:mine") + full("me:history", "d-only");
   if (isManager()) {
@@ -125,7 +125,7 @@ function render() {
 
   $("awNav").innerHTML = navHtml();
   $("awPageTitle").textContent = r.title;
-  $("awSub").textContent = S.route.startsWith("mg:") ? `Quản lý · ${scopeText()}` : "";
+  $("awSub").textContent = S.route.startsWith("mg:") ? `${roleLabel()} · ${scopeText()}` : "";
   $("awYearBadge").textContent = S.cfg.namHoc ? `Năm học ${S.cfg.namHoc}` : "";
   $("awAvatar").textContent = initials(S.me.name);
   $("awUserName").textContent = $("awUserName2").textContent = S.me.name || S.me.email;
@@ -135,9 +135,9 @@ function render() {
   $("subnav").hidden = !S.route.startsWith("mg:");
   if (!$("subnav").hidden) $("subnav").innerHTML = ["mg:stats", "mg:add", "mg:slots"].map((k) => `<button class="${S.route === k ? "on" : ""}" data-go="${k}">${esc(ROUTES[k].short)}</button>`).join("");
   $("settings").hidden = S.route !== "settings";
+  $("yearEndPanel").hidden = !(S.route === "settings" && S.me.admin);
   $("page").hidden = S.route === "settings";
   if (S.route === "settings") {
-    $("yearEndPanel").hidden = !(S.me.leadTo > 0);
     $("yearEndCurrent").textContent = S.cfg.namHoc || "";
     return;
   }
@@ -185,7 +185,7 @@ $("pwForm").onsubmit = async (e) => {
 onAuthStateChanged(auth, async (u) => {
   S.unsub.forEach((f) => f()); S.unsub = [];
   Object.values(S.unsubDots).forEach((f) => f()); S.unsubDots = {};
-  Object.assign(S, { user: u, me: null, dots: [], slotsBy: {}, regsBy: {}, roster: [], myYear: [], teachersAll: [], openGv: null, pick: null });
+  Object.assign(S, { teachersLoaded: false, dotsLoaded: false, user: u, me: null, dots: [], slotsBy: {}, regsBy: {}, roster: [], myYear: [], teachersAll: [], openGv: null, pick: null });
   if (!u) return show("login");
   show("loading");
   const email = u.email.toLowerCase();
@@ -201,9 +201,10 @@ onAuthStateChanged(auth, async (u) => {
     S.render();
   }));
   // Quản trị (x) thấy mọi GV; tổ trưởng chỉ thấy GV tổ mình. Luật Firestore cũng ép đúng như vậy.
+  S.teachersLoaded = !(S.me.admin || S.me.leadTo);
   if (S.me.admin || S.me.leadTo) {
     const q = S.me.admin ? collection(db, "teachers") : query(collection(db, "teachers"), where("to", "==", S.me.leadTo));
-    S.unsub.push(onSnapshot(q, (qs) => { S.teachersAll = qs.docs.map((d) => ({ email: d.id, ...d.data() })); S.render(); }));
+    S.unsub.push(onSnapshot(q, (qs) => { S.teachersAll = qs.docs.map((d) => ({ email: d.id, ...d.data() })); S.teachersLoaded = true; S.render(); }));
   }
   // Các đợt thi của năm học hiện tại; mỗi đợt có listener riêng cho ca thi và đăng ký
   S.unsub.push(onSnapshot(collection(db, "dots"), (qs) => {
@@ -211,6 +212,7 @@ onAuthStateChanged(auth, async (u) => {
     const ids = new Set(S.dots.map((d) => d.id));
     for (const id of Object.keys(S.unsubDots)) if (!ids.has(id)) { S.unsubDots[id](); delete S.unsubDots[id]; delete S.slotsBy[id]; delete S.regsBy[id]; }
     for (const id of ids) if (!S.unsubDots[id]) subscribeDot(id);
+    S.dotsLoaded = true;
     S.render();
   }));
   // Mọi ca của tôi trong cả năm học (mọi đợt)

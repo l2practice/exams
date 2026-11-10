@@ -171,6 +171,7 @@ function dateLongVN(iso) {
   const [y, m, d] = iso.split('-').map(Number);
   return `${DOW_SHORT[new Date(y, m - 1, d).getDay()]} ngày ${d}/${m}/${y}`;
 }
+const slotWho = (s) => (String(s.nganh || '').indexOf('KHAC') === 0 ? 'Khoa khác · ' + (s.donVi || '') : 'K' + s.khoa + ' · ' + s.nganh);
 const slotId = (ma, iso, ca, khoa, nganh) => `${ma}-${iso.replace(/-/g, '')}-c${ca}-k${khoa}-${nganh}`;
 const startDate = (cfg, iso, ca) => new Date(`${iso}T${cfg.ca[ca].start}:00+07:00`);
 const arriveDate = (cfg, iso, ca) => new Date(`${iso}T${cfg.ca[ca].arrive}:00+07:00`);
@@ -180,7 +181,7 @@ const hhmmVN = (s) => s.replace(':', 'h');
 function readSlots(ma) {
   return fsList('slots')
     .filter((d) => d.dotId === ma && d.active !== false)
-    .map((d) => ({ id: d._id, date: d.date, ca: d.ca, khoa: d.khoa, nganh: d.nganh, mon: d.mon || '', note: d.note || '',
+    .map((d) => ({ id: d._id, date: d.date, ca: d.ca, khoa: d.khoa, nganh: d.nganh, donVi: d.donVi || '', mon: d.mon || '', note: d.note || '',
       need: { t1: (d.need && d.need.t1) || 0, t2: (d.need && d.need.t2) || 0, t3: (d.need && d.need.t3) || 0 } }))
     .filter((s) => s.need.t1 + s.need.t2 + s.need.t3 > 0);
 }
@@ -439,7 +440,7 @@ function endAcademicYear(req) {
   let cfg = getCfg();
   const email = verifyIdToken(req.idToken, cfg);
   if (!email) return { ok: false, error: 'auth' };
-  const leader = readTeachers().find((t) => t.email === email && t.leadTo > 0);
+  const leader = readTeachers().find((t) => t.email === email && t.admin);
   if (!leader) return { ok: false, error: 'forbidden' };
   const lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
@@ -473,7 +474,7 @@ function endAcademicYear(req) {
     detail.getRange(1, 1, 1, 10).setValues([['Ngày', 'Ca', 'Khóa', 'Ngành', 'Môn thi', 'Đợt thi', 'Email', 'Họ tên', 'Tổ chỉ tiêu', 'Năm học']]).setFontWeight('bold');
     const detailRows = regs.map((r) => {
       const s = slots.get(r.slotId) || {}, d = dots.get(r.dotId) || {};
-      return [r.date || '', r.ca || '', s.khoa || '', s.nganh || '', s.mon || '', d.name || r.dotId || '', r.email || '', r.name || '', TO_LABEL[r.to] || r.to || '', year];
+      return [r.date || '', r.ca || '', (String(s.nganh || '').indexOf('KHAC') === 0 ? 'Khoa khác' : s.khoa) || '', (String(s.nganh || '').indexOf('KHAC') === 0 ? s.donVi : s.nganh) || '', s.mon || '', d.name || r.dotId || '', r.email || '', r.name || '', TO_LABEL[r.to] || r.to || '', year];
     }).sort((a, b) => String(a[0]).localeCompare(String(b[0])) || Number(a[1]) - Number(b[1]));
     if (detailRows.length) detail.getRange(2, 1, detailRows.length, 10).setValues(detailRows);
     detail.setFrozenRows(1); detail.autoResizeColumns(1, 10);
@@ -640,7 +641,7 @@ function shiftMail(slot, action, from, replacement, bucket) {
     ? `Thầy/cô ${from.name} đã chuyển ca gác thi cho thầy/cô ${replacement.name}.\n\n`
     : `Thầy/cô ${from.name} đã huỷ ca gác thi. Ca này đang trống người.\n\n`;
   MailApp.sendEmail({ to: lead.email, name: cfg.tenNguoiGui || 'Gác thi DNU', subject,
-    body: `${lines}Ngày: ${date}\nCa ${slot.ca}, bắt đầu lúc ${start}\nKhoá ${slot.khoa} · ${slot.nganh}${slot.mon ? ` · ${slot.mon}` : ''}\nTổ phụ trách chỉ tiêu: ${TO_LABEL[bucket]}\n\nVui lòng kiểm tra số người đã đăng ký trong ứng dụng.` });
+    body: `${lines}Ngày: ${date}\nCa ${slot.ca}, bắt đầu lúc ${start}\n${slotWho(slot)}${slot.mon ? ` · ${slot.mon}` : ''}\nTổ phụ trách chỉ tiêu: ${TO_LABEL[bucket]}\n\nVui lòng kiểm tra số người đã đăng ký trong ứng dụng.` });
   return true;
 }
 /** All enrollment/transfer/cancellation mutations are serialized and validated on the server. */
@@ -759,7 +760,7 @@ function exportMau(ma) {
 
   slots.forEach((s, j) => {
     const c = C0 - 1 + j;
-    grid[7][c] = isoToVN(s.date); grid[8][c] = s.ca; grid[9][c] = `K${s.khoa} - ${s.nganh}`;
+    grid[7][c] = isoToVN(s.date); grid[8][c] = s.ca; grid[9][c] = slotWho(s).replace(' · ', ' - ');
     [1, 2, 3].filter((t) => s.need['t' + t] > 0).forEach((t, i) => (grid[10 + i][c] = `${TO_LABEL[t]} (${s.need['t' + t]})`));
   });
 
@@ -853,7 +854,7 @@ function buildReminder(cfg, name, items, stat, sender) {
         <tr><td style="padding:14px 16px">
           <div style="font-size:15px;color:#556070">${dateLongVN(s.date).replace(/^./, (c) => c.toUpperCase())}</div>
           <div style="font-size:28px;line-height:1.25;font-weight:700;color:#1b5ed8;margin:2px 0 6px">Bắt đầu lúc ${start}</div>
-          <div style="font-size:17px;color:#18202c"><b>Ca ${s.ca}</b> · Khoá ${s.khoa} – ${esc(s.nganh)}${s.mon ? ' · ' + esc(s.mon) : ''}</div>
+          <div style="font-size:17px;color:#18202c"><b>Ca ${s.ca}</b> · ${esc(slotWho(s))}${s.mon ? ' · ' + esc(s.mon) : ''}</div>
           <div style="font-size:13px;color:#7a8596;margin-top:6px">Có mặt tại Hội đồng thi (${esc(cfg.coSo)}) lúc ${arrive}</div>
           ${s.note ? `<div style="font-size:15px;color:#9a5200;margin-top:4px">Ghi chú: ${esc(s.note)}</div>` : ''}
         </td></tr>
@@ -888,7 +889,7 @@ function buildReminder(cfg, name, items, stat, sender) {
 </td></tr></table></body></html>`;
 
   const text = `Chào thầy/cô ${name},\n\nNhắc lịch coi thi (${cfg.coSo}):\n\n` +
-    items.map(({ s, arrive, start }) => `- ${dateLongVN(s.date)}: Ca ${s.ca}, BẮT ĐẦU ${start} (có mặt tại HĐ thi lúc ${arrive}), Khoá ${s.khoa} ${s.nganh}${s.mon ? ', ' + s.mon : ''}`).join('\n') +
+    items.map(({ s, arrive, start }) => `- ${dateLongVN(s.date)}: Ca ${s.ca}, BẮT ĐẦU ${start} (có mặt tại HĐ thi lúc ${arrive}), ${slotWho(s)}${s.mon ? ', ' + s.mon : ''}`).join('\n') +
     `\n\n${progress.replace(/<\/?b>/g, '')}\n\n${from}`;
   return { subject, html, text };
 }
@@ -914,7 +915,7 @@ function sendReminders() {
   teachers.forEach((t) => { byEmail[t.email] = t; if (t.leadTo && !leadBy[t.leadTo]) leadBy[t.leadTo] = t; });
 
   const slotMap = {};
-  fsList('slots').forEach((d) => { if (d.active !== false) slotMap[d._id] = { id: d._id, date: d.date, ca: d.ca, khoa: d.khoa, nganh: d.nganh, mon: d.mon || '', note: d.note || '' }; });
+  fsList('slots').forEach((d) => { if (d.active !== false) slotMap[d._id] = { id: d._id, date: d.date, ca: d.ca, khoa: d.khoa, nganh: d.nganh, donVi: d.donVi || '', mon: d.mon || '', note: d.note || '' }; });
 
   const perUser = {};
   allRegs.forEach((r) => {

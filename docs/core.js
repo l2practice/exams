@@ -45,6 +45,11 @@ export const STATUS_LABEL = { SOAN: "Đang soạn lịch", MO: "Đang mở đăn
 export const needOf = (s, t) => s.need?.["t" + t] || 0;
 export const totalNeed = (s) => needOf(s, 1) + needOf(s, 2) + needOf(s, 3);
 export const totalTaken = (regs, slotId) => (regs || []).filter((r) => r.slotId === slotId).length;
+// Ca thi của khoa khác: khoa=0, nganh="KHAC<SLUG>" (để mã ca khác nhau giữa các khoa), donVi = tên khoa hiển thị
+export const isOther = (s) => !!s && String(s.nganh || "").startsWith("KHAC");
+export const otherCode = (name) => "KHAC" + String(name).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+/** "K12 · SPA" hoặc "Khoa khác · Tên khoa" */
+export const slotWho = (s) => (!s ? "" : isOther(s) ? `Khoa khác · ${s.donVi || "—"}` : `K${s.khoa} · ${s.nganh}`);
 export const slotId = (dot, iso, ca, khoa, nganh) => `${dot}-${iso.replace(/-/g, "")}-c${ca}-k${khoa}-${nganh}`;
 export const visibleSlots = (dotId) => (S.slotsBy[dotId] || []).filter((s) => totalNeed(s) > 0);
 export const findSlot = (id) => Object.values(S.slotsBy).flat().find((s) => s.id === id);
@@ -94,7 +99,7 @@ export const chipsHtml = (items, cur, attr) =>
  * Hộp thoại xác nhận (thay cho confirm() mặc định của trình duyệt): chữ lớn, nút to, hiện rõ từng thông tin.
  * rows = [[nhãn, giá trị]]. Trả Promise<boolean>. Esc hoặc bấm nền = không đồng ý.
  */
-export function ask({ title, rows = [], text = "", warn = "", ok = "Đồng ý", cancel = "Không", danger = false, ic = "tasks" }) {
+export function ask({ title, rows = [], text = "", warn = "", ok = "Đồng ý", cancel = "Không", danger = false, ic = "tasks", confirmText = "" }) {
   return new Promise((resolve) => {
     const bg = document.createElement("div");
     bg.className = "aw-od-bg";
@@ -104,6 +109,7 @@ export function ask({ title, rows = [], text = "", warn = "", ok = "Đồng ý",
       ${text ? `<p class="aw-od-sub">${esc(text)}</p>` : ""}
       ${rows.length ? `<dl class="aw-od-rows">${rows.filter((r) => r[1]).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` : ""}
       ${warn ? `<div class="aw-od-warn"><b>⚠ Lưu ý</b><br>${esc(warn)}</div>` : ""}
+      ${confirmText ? `<label for="askType" class="aw-od-type">Gõ <b>${esc(confirmText)}</b> để xác nhận</label><input id="askType" class="field" autocomplete="off" autocapitalize="off" spellcheck="false">` : ""}
       <div class="aw-od-foot"><button type="button" id="askNo">${esc(cancel)}</button><button type="button" id="askOk" class="${danger ? "danger" : "primary"}">${esc(ok)}</button></div>
     </div>`;
     document.body.appendChild(bg);
@@ -113,6 +119,7 @@ export function ask({ title, rows = [], text = "", warn = "", ok = "Đồng ý",
     bg.onclick = (e) => { if (e.target === bg) done(false); };
     bg.querySelector("#askNo").onclick = () => done(false);
     bg.querySelector("#askOk").onclick = () => done(true);
-    bg.querySelector("#askOk").focus();
+    const okBtn = bg.querySelector("#askOk"), typed = bg.querySelector("#askType");
+    if (typed) { okBtn.disabled = true; typed.oninput = () => (okBtn.disabled = typed.value.trim() !== confirmText); typed.focus(); } else okBtn.focus();
   });
 }

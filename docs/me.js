@@ -1,7 +1,7 @@
 // Các trang của giảng viên: Tổng quan · Đăng ký ca thi · Ca của tôi · Lịch sử gác thi.
 import {
   auth, db, S, $, esc, toast, ask, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, dmyOf, fmtLong, todayIso, isoOf, khoaNam,
-  statusOf, isRegOpen, STATUS_LABEL, needOf, totalNeed, totalTaken, visibleSlots, findSlot,
+  statusOf, isRegOpen, slotWho, isOther, STATUS_LABEL, needOf, totalNeed, totalTaken, visibleSlots, findSlot,
 } from "./core.js";
 import { icon } from "./icons.js";
 import { scriptUrl } from "./firebase-config.js";
@@ -13,7 +13,7 @@ const slotKey = (a, b) => a.date.localeCompare(b.date) || a.ca - b.ca || a.khoa 
 const sameDay = (s) => S.myYear.some((r) => r.date === s.date && r.slotId !== s.id);
 const myIds = () => new Set(S.myYear.map((r) => r.slotId));
 const dayLabel = (iso) => `${dowOf(iso)}, ${dmyOf(iso)}`;
-const slotLabel = (s) => (s ? `K${s.khoa} · ${s.nganh}` : "");
+const slotLabel = (s) => slotWho(s);
 const parseIso = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d); };
 const addDays = (iso, n) => { const d = parseIso(iso); d.setDate(d.getDate() + n); return isoOf(d); };
 const mondayOf = (iso) => { const d = parseIso(iso); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return isoOf(d); };
@@ -52,7 +52,7 @@ export function overviewHtml() {
   const items = upcoming.slice(0, 3).map((r) => {
     const s = findSlot(r.slotId);
     return `<div class="uitem"><span class="uic">${icon("calendar")}</span><div><b>${esc(dayLabel(r.date))} – Ca ${r.ca}</b>
-      <div class="small">${s ? `K${esc(s.khoa)} – ${esc(s.mon || s.nganh)}` : ""}${s?.mon ? ` · ${esc(s.nganh)}` : ""} · ${caInfo(r.ca).start}</div></div></div>`;
+      <div class="small">${s ? `${esc(slotWho(s))}${s.mon ? ` – ${esc(s.mon)}` : ""}` : ""} · ${caInfo(r.ca).start}</div></div></div>`;
   }).join("");
   const kpi = (cls, ic, v, l) => `<div class="kpi"><span class="kicon ${cls}">${icon(ic)}</span><div><div class="kv">${v}</div><div class="kl">${l}</div></div></div>`;
   return `<div class="greet"><h2>Xin chào, <b>${esc(S.me.name || S.me.email)}</b> 👋</h2>
@@ -104,13 +104,13 @@ export function mineHtml(tab) {
       const s = findSlot(r.slotId);
       if (r.date !== last) { last = r.date; html += `<div class="dayhead2"><b>${esc(dayLabel(r.date))}</b>${w.perDay[r.date] > 1 && tab !== "past" ? `<span class="pill warn">⚠ ${w.perDay[r.date]} ca trong ngày</span>` : ""}</div>`; }
       html += `<div class="mrow ${w.clash(r) ? "clash" : w.multi(r) && tab !== "past" ? "multi" : ""}"><div class="mca"><b>Ca ${r.ca}</b><span>${caInfo(r.ca).start}</span></div>
-        <div class="mmain"><div><b>${s ? `K${esc(s.khoa)} · ${esc(s.nganh)}` : ""}</b> ${esc(s?.mon || "")}</div><div class="small">${esc(dotName(r.dotId))} · có mặt ${caInfo(r.ca).arrive}</div></div><div>${act(r)}</div></div>`;
+        <div class="mmain"><div><b>${esc(slotWho(s))}</b> ${esc(s?.mon || "")}</div><div class="small">${esc(dotName(r.dotId))} · có mặt ${caInfo(r.ca).arrive}</div></div><div>${act(r)}</div></div>`;
     }
     return head + (html || `<div class="card center muted">${tab === "past" ? "Chưa có ca nào đã gác trên app." : "Bạn chưa có ca nào sắp tới."}</div>`);
   }
   const rows = list.map((r) => {
     const s = findSlot(r.slotId);
-    return `<tr class="${tab !== "past" && w.multi(r) ? "multi" : ""}"><td><b>${esc(dayLabel(r.date))}</b></td><td>Ca ${r.ca} · ${caInfo(r.ca).start}</td><td>${s ? `K${esc(s.khoa)} · ${esc(s.nganh)}` : ""}</td><td>${esc(s?.mon || "")}</td><td>${esc(dotName(r.dotId))}</td>
+    return `<tr class="${tab !== "past" && w.multi(r) ? "multi" : ""}"><td><b>${esc(dayLabel(r.date))}</b></td><td>Ca ${r.ca} · ${caInfo(r.ca).start}</td><td>${esc(slotWho(s))}</td><td>${esc(s?.mon || "")}</td><td>${esc(dotName(r.dotId))}</td>
       <td>${tab !== "past" ? warnPill(w, r) : ""}</td><td>${act(r)}</td></tr>`;
   }).join("");
   return head + `<div class="tbl-wrap"><table class="list"><thead><tr><th>Ngày</th><th>Ca</th><th>Khoá - Ngành</th><th>Môn</th><th>Đợt</th><th>Cảnh báo</th><th></th></tr></thead>
@@ -134,7 +134,7 @@ function weekHtml(regs, w, today) {
     return `<td class="${d === today ? "today" : ""}">${here.map((r) => {
       const s = findSlot(r.slotId), bad = here.length > 1, canChange = r.date >= today && s;
       return `<div class="evt ${bad ? "clash" : w.multi(r) ? "multi" : ""} ${r.date < today ? "past" : ""}" ${canChange ? `data-exchange="${esc(r.slotId)}"` : ""} title="${esc(dotName(r.dotId))}${canChange ? " · bấm để đổi ca" : ""}">
-        <b>${s ? `K${esc(s.khoa)} · ${esc(s.nganh)}` : "Ca"}</b><span>${esc(s?.mon || "")}</span><span class="small">${caInfo(ca).start}</span></div>`;
+        <b>${s ? esc(slotWho(s)) : "Ca"}</b><span>${esc(s?.mon || "")}</span><span class="small">${caInfo(ca).start}</span></div>`;
     }).join("")}</td>`;
   }).join("")}</tr>`).join("");
   return (clash.length ? `<div class="warnbox bad">⚠ <b>Trùng giờ</b> trong tuần này: ${[...new Set(clash.map((r) => `${dayLabel(r.date)} · Ca ${r.ca}`))].map(esc).join("; ")}.</div>` : "") +
@@ -150,10 +150,14 @@ const selHtml = (name, label, opts, cur) =>
 
 export function registerHtml() {
   const dots = S.dots.filter((d) => statusOf(d) !== "SOAN").sort(openFirst);       // đợt đang soạn lịch chưa hiện cho GV
-  if (!dots.length) return `<div class="card center muted">Hiện chưa có đợt thi nào mở đăng ký.</div>`;
+  if (!dots.length) {
+    const draft = S.dots.filter((d) => statusOf(d) === "SOAN").length;
+    return `<div class="card center"><b>Hiện chưa có đợt thi nào mở đăng ký.</b><p class="muted" style="margin:8px 0 0">${draft ? `Có ${draft} đợt đang được tổ trưởng soạn lịch, sẽ hiện ở đây khi mở đăng ký.` : "Chưa có đợt mới nào được tạo."} Thời điểm mở đợt tiếp theo do tổ trưởng quyết định; vui lòng hỏi tổ trưởng hoặc quay lại sau.</p></div>`;
+  }
   const all = dots.flatMap((d) => visibleSlots(d.id));
-  const khoas = [...new Set(all.map((s) => s.khoa))].sort((a, b) => a - b);
-  const nganhs = [...new Set(all.map((s) => s.nganh))].sort();
+  const khoas = [...new Set(all.filter((s) => !isOther(s)).map((s) => s.khoa))].sort((a, b) => a - b);
+  const nganhLabel = new Map(all.map((s) => [s.nganh, isOther(s) ? `Khoa khác: ${s.donVi}` : s.nganh]));
+  const nganhs = [...nganhLabel.keys()].sort();
   const cnts = allCounts(), mine = myIds();
   const shownDots = dots.filter((d) => S.fDot === "all" || d.id === S.fDot);
   const today = todayIso();
@@ -166,7 +170,7 @@ export function registerHtml() {
       <span class="grow"></span>
       ${selHtml("dot", "Đợt", [["all", "Tất cả đợt"], ...dots.map((d) => [d.id, d.name])], S.fDot)}
       ${selHtml("khoa", "Khoá", [["all", "Tất cả khoá"], ...khoas.map((k) => [k, `Khoá ${k}` + (khoaNam(k) ? ` (năm ${khoaNam(k)})` : "")])], S.fKhoa)}
-      ${selHtml("nganh", "Ngành", [["all", "Tất cả ngành"], ...nganhs.map((n) => [n, n])], S.fNganh)}
+      ${selHtml("nganh", "Ngành", [["all", "Tất cả ngành"], ...nganhs.map((n) => [n, nganhLabel.get(n)])], S.fNganh)}
     </div>`;
   const crossTeamNote = `<p class="small">Bạn có thể đăng ký ca của tổ khác khi còn chỗ. Hệ thống ưu tiên xếp bạn vào chỉ tiêu tổ ${esc(TO_SHORT[S.me.to])} trước.</p>`;
   if (S.regView === "grid") {
@@ -192,8 +196,8 @@ function listRows(items, cnts, mine) {
         : why === "Đã đủ" ? `<span class="pill ok">Đã đủ người</span>` : `<span class="pill">${esc(why)}</span>`;
       return `<div class="rrow ${s.id === S.pick ? "picked" : ""}" data-pick="${esc(s.id)}">
         <div class="c-date rr-date">${esc(dayLabel(s.date))}</div>
-        <div class="c-ca">Ca ${s.ca} · ${ci.start}</div><div class="c-k">K${esc(s.khoa)}</div><div class="c-n">${esc(s.nganh)}</div>
-        <div class="c-sum small">Ca ${s.ca} · ${ci.start} · K${esc(s.khoa)} · ${esc(s.nganh)} · đã ĐK ${st.taken}/${st.need}</div>
+        <div class="c-ca">Ca ${s.ca} · ${ci.start}</div><div class="c-k">${isOther(s) ? "Khoa khác" : "K" + esc(s.khoa)}</div><div class="c-n">${esc(isOther(s) ? s.donVi : s.nganh)}</div>
+        <div class="c-sum small">Ca ${s.ca} · ${ci.start} · ${esc(slotWho(s))} · đã ĐK ${st.taken}/${st.need}</div>
         <div class="c-meta">${esc(s.mon || "—")}${multi ? ` <span class="crowmeta">· ${esc(dotName(s.dotId))}</span>` : ""}${st.k !== "mine" && sameDay(s) ? ` <span class="pill warn">⚠ Cùng ngày</span>` : ""}</div>
         <div class="c-cnt">${st.need ? `${st.taken} / ${st.need}` : "—"}</div>
         <div class="act c-st">${act}</div></div>`;
@@ -247,7 +251,7 @@ function timelineCard(p, mine) {
 function dayCard(all, p, cnts, mine) {
   const day = all.filter((s) => s.date === p.date).sort(slotKey);
   const cell = (s, t) => { const n = needOf(s, t); if (!n) return `<span class="cellx na">–</span>`; const c = cnts[s.dotId]?.[s.id]?.["t" + t] || 0; return `<span class="cellx ${c >= n ? "full" : c > 0 ? "part" : "zero"}">${c}/${n}</span>`; };
-  const rows = day.map((s) => `<tr class="${s.id === p.id ? "sel" : ""}"><th>Ca ${s.ca}</th><td>K${esc(s.khoa)}</td><td>${esc(s.nganh)}</td><td>${cell(s, 1)}</td><td>${cell(s, 2)}</td><td>${cell(s, 3)}</td></tr>`).join("");
+  const rows = day.map((s) => `<tr class="${s.id === p.id ? "sel" : ""}"><th>Ca ${s.ca}</th><td>${isOther(s) ? "Khoa khác" : "K" + esc(s.khoa)}</td><td>${esc(isOther(s) ? s.donVi : s.nganh)}</td><td>${cell(s, 1)}</td><td>${cell(s, 2)}</td><td>${cell(s, 3)}</td></tr>`).join("");
   const mineToday = S.myYear.filter((r) => r.date === p.date).sort((a, b) => a.ca - b.ca);
   const names = (S.regsBy[p.dotId] || []).filter((r) => r.slotId === p.id);
   const why = mine.has(p.id) ? null : reason(p, cnts);
@@ -303,7 +307,7 @@ function gridFor(d, mine, pass) {
   for (const s of slots) { const last = days.at(-1); if (last && last.date === s.date) last.n++; else days.push({ date: s.date, n: 1 }); }
   const rowDate = days.map((g) => `<th colspan="${g.n}" class="date"><b>${esc(dowOf(g.date))}</b><br>${dmOf(g.date)}</th>`).join("");
   const rowCa = slots.map((s) => `<th>Ca ${s.ca}<br><small>${caInfo(s.ca).start}</small></th>`).join("");
-  const rowKn = slots.map((s) => `<th title="${esc(s.mon || "")}">K${esc(s.khoa)}<br><small>${esc(s.nganh)}</small></th>`).join("");
+  const rowKn = slots.map((s) => `<th title="${esc(s.mon || "")}">${isOther(s) ? "Khoa khác" : "K" + esc(s.khoa)}<br><small>${esc(isOther(s) ? s.donVi : s.nganh)}</small></th>`).join("");
   const rowLeft = slots.map((s) => { const need = totalNeed(s), taken = totalTaken(regs, s.id), left = need - taken; return `<th class="${!need ? "na" : left > 0 ? "okc" : "bad"}">${!need ? "–" : `${taken}/${need}`}</th>`; }).join("");
   const meRow = S.roster.find((r) => r.email === S.me.email) || { name: S.me.name, to: S.me.to };
   const myCells = slots.map((s) => {
@@ -332,7 +336,7 @@ const posRows = (s) => {
 async function register(s) {
   const ci = caInfo(s.ca), total = totalNeed(s), taken = totalTaken(S.regsBy[s.dotId], s.id);
   if (!(await ask({ title: "Xác nhận đăng ký", text: "Bạn có chắc chắn muốn đăng ký ca thi sau không?", ok: "Đăng ký", cancel: "Huỷ", ic: "calendarCheck", warn: warnText(s),
-    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · bắt đầu ${ci.start}`], ["Có mặt tại HĐ thi", ci.arrive], ["Khoá - Ngành", `Khoá ${s.khoa} · ${s.nganh}`], ["Môn", s.mon || ""], ["Số người", `${taken}/${total} · ưu tiên chỗ của tổ ${TO_SHORT[S.me.to]}`], ...posRows(s)] }))) return;
+    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · bắt đầu ${ci.start}`], ["Có mặt tại HĐ thi", ci.arrive], ["Khoá - Ngành", slotWho(s)], ["Môn", s.mon || ""], ["Số người", `${taken}/${total} · ưu tiên chỗ của tổ ${TO_SHORT[S.me.to]}`], ...posRows(s)] }))) return;
   const result = await shiftRequest({ mode: "register", slotId: s.id });
   if (result.ok) toast(result.bucket === S.me.to ? "Đã đăng ký ca thi vào chỉ tiêu tổ của bạn." : `Đã đăng ký gác chéo, bổ sung chỉ tiêu tổ ${TO_SHORT[result.bucket]}.`);
   else toast(shiftMessage(result.error));
@@ -343,7 +347,7 @@ async function cancel(s) {
   const hours = hoursToStart(s);
   if (hours < 48) { toast("Không thể huỷ trong vòng 48 giờ trước ca thi. Hãy chọn người thay thế để đổi ca."); return; }
   if (!(await ask({ title: "Huỷ đăng ký ca này?", text: "Ca sẽ được bỏ khỏi lịch của bạn và tổ trưởng sẽ nhận email để kiểm tra số người.", ok: "Huỷ ca này", cancel: "Giữ lại", danger: true, ic: "history",
-    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · ${ci.start}`], ["Khoá - Ngành", `Khoá ${s.khoa} · ${s.nganh}`]] }))) return;
+    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · ${ci.start}`], ["Khoá - Ngành", slotWho(s)]] }))) return;
   const r = S.myYear.find((x) => x.slotId === s.id);
   if (!r) return;
   const result = await shiftRequest({ mode: "cancel", slotId: s.id });

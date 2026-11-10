@@ -407,3 +407,21 @@ table.wk tbody td{height:84px}
 .evt.clash{background:var(--bad-bg);border-left-color:var(--bad)}.evt.clash b{color:var(--bad)}
 .evt.past{opacity:.6}
 @media(max-width:860px){.mrow{grid-template-columns:60px 1fr}.mrow>div:last-child{grid-column:1 / -1}.mrow button{width:100%}}
+
+/* ---- Bổ sung: nowrap, skeleton, gõ xác nhận, tab "Của tôi" sáng khi ở Lịch sử (điện thoại) */
+.nowrap,.toolbar button{white-space:nowrap}
+.skel .kicon,.skel .kv,.skel .kl,.skel-row{background:linear-gradient(90deg,var(--soft) 25%,var(--line-2) 50%,var(--soft) 75%);background-size:200% 100%;animation:skel 1.2s linear infinite;border-radius:8px;color:transparent}
+.skel-row{height:38px;margin:10px 0}
+@keyframes skel{to{background-position:-200% 0}}
+.aw-od-type{display:block;margin:14px 0 6px;font-size:.9rem}
+.aw-od input#askType{width:100%}
+.other-box{margin-top:14px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px}
+@media(max-width:860px){
+  .tbl-wrap table.list th,.tbl-wrap table.list td{padding:9px 8px;font-size:.82rem}
+  .stats-tbl .gv-row td:nth-child(n+4),.stats-tbl thead th:nth-child(n+4){padding-inline:6px}
+}
+@media(max-width:860px){
+  .m-hide{display:none}
+  .stats-tbl td:nth-child(2),.stats-tbl td .link{white-space:normal;text-align:left}
+  .nav-item.also{color:var(--p-hv);font-weight:700}
+}

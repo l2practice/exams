@@ -106,15 +106,17 @@
             <button type="button" id="btnSetClose">Quay lại</button>
           </div>
         </form>
-        <section id="yearEndPanel" class="year-end card" hidden>
-          <h2>Kết thúc năm học</h2>
-          <p class="small">Tạo Google Sheet thống kê và gửi liên kết đến duongthanhtu.dnu@gmail.com. Sau đó hệ thống chuyển sang năm học mới, reset số ca trước app về 0 và nâng khóa học lên một khóa. Lịch sử gác thi năm cũ vẫn được giữ.</p>
-          <p class="year-end-current">Đang quản lý: <b id="yearEndCurrent"></b></p>
-          <button type="button" id="btnEndYear" class="danger wide">Xuất thống kê và kết thúc năm học</button>
-          <div id="yearEndMsg" class="okmsg" role="status"></div>
-          <div id="yearEndErr" class="err" role="alert"></div>
-        </section>
         <button type="button" class="danger wide only-mobile" id="btnOutSet">Đăng xuất</button>
+      </section>
+
+      <section id="yearEndPanel" class="year-end card narrow" hidden>
+        <h2>Kết thúc năm học</h2>
+        <p class="small">Tạo Google Sheet thống kê và gửi liên kết đến duongthanhtu.dnu@gmail.com. Sau đó hệ thống chuyển sang năm học mới, reset số ca trước app về 0 và nâng khóa học lên một khóa. Lịch sử gác thi năm cũ vẫn được giữ.</p>
+        <p class="year-end-current">Đang quản lý: <b id="yearEndCurrent"></b></p>
+        <p class="small"><b>Chỉ quản trị toàn khoa</b> được dùng chức năng này. Bạn sẽ phải gõ lại năm học để xác nhận.</p>
+        <button type="button" id="btnEndYear" class="danger wide">Xuất thống kê và kết thúc năm học</button>
+        <div id="yearEndMsg" class="okmsg" role="status"></div>
+        <div id="yearEndErr" class="err" role="alert"></div>
       </section>
 
       <div id="page"></div>

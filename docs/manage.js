@@ -5,9 +5,11 @@ import { scriptUrl } from "./firebase-config.js";
 import { icon } from "./icons.js";
 import {
   auth, db, S, $, esc, toast, ask, NGANH, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, fmtLong, todayIso, isoOf, parseDates, manageTos,
-  statusOf, canEditCa, STATUS_LABEL, needOf, slotId, visibleSlots, findSlot, khoaList, khoaNam,
+  statusOf, canEditCa, STATUS_LABEL, needOf, slotId, slotWho, isOther, otherCode, visibleSlots, findSlot, khoaList, khoaNam,
 } from "./core.js";
 
+const dmy = (d) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+function sampleDates() { const a = new Date(); a.setDate(a.getDate() + 14); const b = new Date(a); b.setDate(b.getDate() + 4); return `${dmy(a)}\n${dmy(a)}-${dmy(b)}`; }
 const dotName = (id) => S.dots.find((d) => d.id === id)?.name || "";
 const scopeLabel = () => (S.me.admin ? "Toàn khoa (cả 3 tổ)" : `Tổ ${TO_LABEL[S.me.leadTo]}`);
 
@@ -27,7 +29,7 @@ function detailHtml(p, cols) {
   const today = todayIso();
   const rows = p.list.map((r) => {
     const s = findSlot(r.slotId), ci = caInfo(r.ca);
-    return `<tr><td>${esc(fmtLong(r.date))}</td><td>Ca ${r.ca} · ${ci.start} <span class="small">(có mặt ${ci.arrive})</span></td><td>${s ? "K" + esc(s.khoa) : "—"}</td><td>${s ? esc(s.nganh) : "—"}</td>
+    return `<tr><td>${esc(fmtLong(r.date))}</td><td>Ca ${r.ca} · ${ci.start} <span class="small">(có mặt ${ci.arrive})</span></td><td>${s ? (isOther(s) ? "Khoa khác" : "K" + esc(s.khoa)) : "—"}</td><td>${s ? esc(isOther(s) ? s.donVi : s.nganh) : "—"}</td>
       <td>${esc(s?.mon || "")}</td><td>${esc(dotName(r.dotId))}</td><td><span class="pill ${r.date < today ? "ok" : "warn"}">${r.date < today ? "Đã gác" : "Sắp tới"}</span></td></tr>`;
   }).join("");
   return `<tr class="gv-detail"><td colspan="${cols}"><div class="detail">
@@ -52,23 +54,28 @@ function missingHtml() {
     }
   }
   rows.sort((a, b) => a.s.date.localeCompare(b.s.date) || a.s.ca - b.s.ca);
-  const body = rows.map(({ d, s, miss }) => `<tr><td>${esc(d.name)}</td><td>${esc(dowOf(s.date))} ${dmOf(s.date)}</td><td>Ca ${s.ca} (${caInfo(s.ca).start})</td><td>K${esc(s.khoa)} ${esc(s.nganh)}</td><td>${miss.map(esc).join(", ")}</td></tr>`).join("");
-  return `<details class="card more"><summary><b>Ca còn thiếu người</b> <span class="small">(${rows.length} ca)</span></summary>
+  const body = rows.map(({ d, s, miss }) => `<tr><td>${esc(d.name)}</td><td>${esc(dowOf(s.date))} ${dmOf(s.date)}</td><td>Ca ${s.ca} (${caInfo(s.ca).start})</td><td>${esc(slotWho(s))}</td><td>${miss.map(esc).join(", ")}</td></tr>`).join("");
+  const mineN = rows.length, allN = S.dots.filter((d) => statusOf(d) !== "DONG").reduce((a, d) => a + visibleSlots(d.id).length, 0);
+  return `<details class="card more"><summary><b>Ca còn thiếu người</b> <span class="small">(${mineN} ca của ${esc(scopeLabel())} · ${allN} ca đang mở toàn khoa)</span></summary>
     <div class="tbl-wrap"><table class="list"><thead><tr><th>Đợt</th><th>Ngày</th><th>Ca</th><th>Khoá - Ngành</th><th>Còn thiếu</th></tr></thead>
     <tbody>${body || `<tr><td colspan="5" class="okc">Mọi ca đều đủ người.</td></tr>`}</tbody></table></div></details>`;
 }
 
+const skeleton = () => `<div class="kpis4">${[1, 2, 3, 4].map(() => `<div class="kpi skel"><span class="kicon"></span><div><div class="kv">&nbsp;</div><div class="kl">&nbsp;</div></div></div>`).join("")}</div>
+  <div class="card skel-rows" aria-busy="true" aria-live="polite"><p class="small">Đang tải danh sách giảng viên…</p>${[1, 2, 3, 4].map(() => `<div class="skel-row"></div>`).join("")}</div>`;
+
 export function statsHtml() {
+  if (!S.teachersLoaded || !S.dotsLoaded) return skeleton();
   const min = S.cfg.minCa || 20, all = peopleStats();
   const nShort = all.filter((p) => p.short > 0).length, nOk = all.length - nShort, sumDone = all.reduce((a, p) => a + p.total, 0);
   const shown = all.filter((p) => S.gvFilter === "all" || (S.gvFilter === "short" ? p.short > 0 : p.short === 0));
   const cols = S.me.admin ? 7 : 6;
   const rows = shown.map((p, i) => `
     <tr class="gv-row ${S.openGv === p.email ? "open" : ""}" data-gv="${esc(p.email)}">
-      <td>${i + 1}</td>
+      <td class="m-hide">${i + 1}</td>
       <td><button class="link">${S.openGv === p.email ? "▾" : "▸"} ${esc(p.name)}</button></td>
-      ${S.me.admin ? `<td>${esc(TO_SHORT[p.to] || "")}</td>` : ""}
-      <td><b>${p.total}</b> / ${min}</td><td>${p.done}</td><td>${p.upcoming}</td>
+      ${S.me.admin ? `<td class="m-hide">${esc(TO_SHORT[p.to] || "")}</td>` : ""}
+      <td><b>${p.total}</b> / ${min}</td><td class="m-hide">${p.done}</td><td class="m-hide">${p.upcoming}</td>
       <td>${p.short}</td>
       <td><span class="pill ${p.short ? "bad" : "ok"}">${p.short ? "Chưa đủ" : "Đủ"}</span></td></tr>
     ${S.openGv === p.email ? detailHtml(p, cols + 1) : ""}`).join("");
@@ -76,9 +83,9 @@ export function statsHtml() {
   return `<div class="kpis4">${kpi("violet", "users", all.length, "Giảng viên")}${kpi("green", "checkCircle", nOk, `Đủ ${min} ca`)}${kpi("orange", "hourglass", nShort, "Chưa đủ")}${kpi("blue", "calendarCheck", sumDone, "Tổng số ca đã gác")}</div>
     <div class="toolbar"><span class="pill p">Năm học ${esc(S.cfg.namHoc || "")}</span><span class="pill">${esc(scopeLabel())}</span><span class="grow"></span>
       <select class="sel" data-sel="gvf" aria-label="Trạng thái">${[["all", "Tất cả trạng thái"], ["short", "Chưa đủ"], ["ok", "Đã đủ"]].map(([v, l]) => `<option value="${v}" ${S.gvFilter === v ? "selected" : ""}>${l}</option>`).join("")}</select>
-      <button class="primary" id="btnCsv">${icon("list")} Tải CSV</button></div>
+      <button class="primary nowrap" id="btnCsv">${icon("list")} Tải CSV</button></div>
     <p class="small">Bấm vào tên giảng viên để xem chi tiết từng ca (ngày, giờ, khoá, ngành, môn).</p>
-    <div class="tbl-wrap"><table class="list"><thead><tr><th>#</th><th>Giảng viên</th>${S.me.admin ? "<th>Tổ</th>" : ""}<th>Tổng ca</th><th>Đã gác</th><th>Sắp tới</th><th>Còn thiếu</th><th>Tình trạng</th></tr></thead>
+    <div class="tbl-wrap"><table class="list stats-tbl"><thead><tr><th class="m-hide">#</th><th>Giảng viên</th>${S.me.admin ? `<th class="m-hide">Tổ</th>` : ""}<th>Tổng ca</th><th class="m-hide">Đã gác</th><th class="m-hide">Sắp tới</th><th>Còn thiếu</th><th>Tình trạng</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="${cols + 1}" class="muted">Không có giảng viên nào.</td></tr>`}</tbody></table></div>
     ${missingHtml()}`;
 }
@@ -114,6 +121,7 @@ export function addHtml() {
       <select class="sel field" id="addDot">${dots.map((d) => `<option value="${esc(d.id)}">${esc(d.name)} (${esc(STATUS_LABEL[statusOf(d)])})</option>`).join("")}</select>
       <label>Số giảng viên cần mỗi ca</label>
       <div class="row">${tos.map((t) => `<div class="need-in"><span>${esc(TO_LABEL[t])}</span><input class="field" id="addNeed${t}" type="number" min="0" max="20" value="1" inputmode="numeric"></div>`).join("")}</div>
+      <p class="small">Mỗi ca cần ít nhất 1 giảng viên.</p>
     </div>
 
     <div class="seg" style="margin-bottom:14px"><button class="on" data-at="manual">Nhập tay</button><button data-at="scan"><span style="display:inline-grid;width:16px">${icon("sparkle")}</span> Quét AI</button></div>
@@ -121,14 +129,20 @@ export function addHtml() {
     <div class="card" id="secManual">
       <h2>Nhập tay</h2>
       <label for="addDates">Ngày thi <span class="small">(cách nhau bằng dấu phẩy hoặc xuống dòng; có thể ghi khoảng)</span></label>
-      <textarea class="field" id="addDates" rows="3" placeholder="24/07/2026&#10;27/07/2026-31/07/2026"></textarea>
+      <textarea class="field" id="addDates" rows="3" placeholder="${esc(sampleDates())}"></textarea>
       <label class="check"><input type="checkbox" id="addSkipSun" checked> Bỏ Chủ nhật</label>
       <label>Ca</label>
       <div class="row">${[1, 2, 3, 4].map((c) => `<label class="check"><input type="checkbox" name="addCa" value="${c}"> Ca ${c} (${caInfo(c).start})</label>`).join("")}</div>
+      <div id="ownBox">
       <label>Khoá</label>
       <div class="row">${khoaList().map((k) => `<label class="check"><input type="checkbox" name="addKhoa" value="${k}"> Khoá ${k}${khoaNam(k) ? ` (năm ${khoaNam(k)})` : ""}</label>`).join("")}</div>
       <label>Ngành</label>
       <div class="row">${NGANH.map((n) => `<label class="check"><input type="checkbox" name="addNganh" value="${n}"> ${n}</label>`).join("")}</div>
+      </div>
+      <div class="other-box">
+        <label for="addDonVi">Hoặc ca thi của <b>khoa khác</b> <span class="small">(đi gác thi cho khoa khác; tự ghi tên khoa, khi đó bỏ qua Khoá/Ngành ở trên)</span></label>
+        <input class="field" id="addDonVi" type="text" maxlength="60" placeholder="Ví dụ: Khoa Kinh tế">
+      </div>
       <label for="addMon">Môn thi <span class="small">(tuỳ chọn)</span></label>
       <input class="field" id="addMon" type="text">
       <div class="err" id="addErr" role="alert"></div>
@@ -166,7 +180,7 @@ const readNeed = () => { const n = {}; manageTos().forEach((t) => (n[t] = Number
 const readForm = () => {
   const checked = (name) => [...document.querySelectorAll(`#addForm input[name=${name}]:checked`)].map((e) => e.value);
   return { dotId: $("addDot").value, dates: $("addDates").value, skipSun: $("addSkipSun").checked,
-    cas: checked("addCa").map(Number), khoas: checked("addKhoa").map(Number), nganhs: checked("addNganh"), mon: $("addMon").value.trim(), need: readNeed() };
+    cas: checked("addCa").map(Number), khoas: checked("addKhoa").map(Number), nganhs: checked("addNganh"), donVi: $("addDonVi").value.trim().replace(/\s+/g, " "), mon: $("addMon").value.trim(), need: readNeed() };
 };
 
 const takenOf = (dotId, id, t) => (S.regsBy[dotId] || []).filter((r) => r.slotId === id && r.to === t).length;
@@ -189,7 +203,7 @@ function planCombos(dotId, combos, need) {
     if (!ex) {
       const n = { t1: 0, t2: 0, t3: 0 };
       tos.forEach((t) => (n["t" + t] = need[t]));
-      creates.push({ id, date: c.date, ca: c.ca, khoa: c.khoa, nganh: c.nganh, need: n, mon: c.mon || "" });
+      creates.push({ id, date: c.date, ca: c.ca, khoa: c.khoa, nganh: c.nganh, donVi: c.donVi || "", need: n, mon: c.mon || "" });
       continue;
     }
     const upd = {};
@@ -210,8 +224,15 @@ function plan(f) {
   const { dates, bad } = parseDates(f.dates);
   if (bad.length) throw new Error("Không hiểu ngày: " + bad.join(", ") + ". Dạng đúng: 27/07/2026 hoặc 27/07/2026-31/07/2026.");
   const days = dates.filter((d) => !(f.skipSun && d.getDay() === 0)).map(isoOf);
-  if (!days.length || !f.cas.length || !f.khoas.length || !f.nganhs.length) throw new Error("Chọn ít nhất 1 ngày, 1 ca, 1 khoá, 1 ngành.");
+  const pastDays = days.filter((d) => d < todayIso());
+  if (pastDays.length) throw new Error("Không thêm được ca vào ngày đã qua: " + pastDays.slice(0, 3).map((d) => fmtLong(d)).join("; ") + ". Hãy chọn ngày từ hôm nay trở đi.");
   const combos = [];
+  if (f.donVi) {
+    if (!days.length || !f.cas.length) throw new Error("Chọn ít nhất 1 ngày và 1 ca.");
+    for (const date of days) for (const ca of f.cas) combos.push({ date, ca, khoa: 0, nganh: otherCode(f.donVi), donVi: f.donVi, mon: f.mon });
+    return planCombos(f.dotId, combos, f.need);
+  }
+  if (!days.length || !f.cas.length || !f.khoas.length || !f.nganhs.length) throw new Error("Chọn ít nhất 1 ngày, 1 ca, 1 khoá, 1 ngành.");
   for (const date of days) for (const ca of f.cas) for (const khoa of f.khoas) for (const nganh of f.nganhs) combos.push({ date, ca, khoa, nganh, mon: f.mon });
   return planCombos(f.dotId, combos, f.need);
 }
@@ -221,7 +242,7 @@ const summary = (p) => `${p.creates.length} ca mới · ${p.updates.length} ca c
 /** Ghi kế hoạch lên Firestore (chia lô ≤ 400). Trả true nếu xong. */
 async function commit(p, dotId, errId, msgId) {
   const ops = [
-    ...p.creates.map((c) => ({ id: c.id, set: { dotId, namHoc: p.dot.namHoc, date: c.date, ca: c.ca, khoa: c.khoa, nganh: c.nganh, mon: c.mon, note: "", need: c.need, active: true, createdBy: S.me.email, createdAt: serverTimestamp() } })),
+    ...p.creates.map((c) => ({ id: c.id, set: { dotId, namHoc: p.dot.namHoc, date: c.date, ca: c.ca, khoa: c.khoa, nganh: c.nganh, ...(isOther(c) ? { donVi: c.donVi } : {}), mon: c.mon, note: "", need: c.need, active: true, createdBy: S.me.email, createdAt: serverTimestamp() } })),
     ...p.updates.map((u) => ({ id: u.id, upd: u.upd })),
   ];
   try {
@@ -378,7 +399,7 @@ export function refreshAddList() {
     .sort((a, b) => a.date.localeCompare(b.date) || a.ca - b.ca || a.khoa - b.khoa || a.nganh.localeCompare(b.nganh));
   const editable = canEditCa(S.dots.find((d) => d.id === dotId));
   const rows = slots.map((s) => `<tr>
-    <td>${esc(dowOf(s.date))} ${dmOf(s.date)}</td><td>Ca ${s.ca} · ${caInfo(s.ca).start}</td><td>K${esc(s.khoa)} ${esc(s.nganh)}</td><td>${esc(s.mon || "")}</td>
+    <td>${esc(dowOf(s.date))} ${dmOf(s.date)}</td><td>Ca ${s.ca} · ${caInfo(s.ca).start}</td><td>${esc(slotWho(s))}</td><td>${esc(s.mon || "")}</td>
     ${tos.map((t) => `<td><input class="num" type="number" min="0" max="20" value="${needOf(s, t)}" data-need="${esc(s.id)}" data-t="${t}" ${editable ? "" : "disabled"}> <span class="small">đã ĐK ${takenOf(dotId, s.id, t)}</span></td>`).join("")}
     <td><button data-save="${esc(s.id)}" ${editable ? "" : "disabled"}>Lưu</button> <button class="danger" data-del="${esc(s.id)}" ${editable ? "" : "disabled"}>Xoá</button></td></tr>`).join("");
   box.innerHTML = `<div class="tbl-wrap"><table class="list"><thead><tr><th>Ngày</th><th>Ca</th><th>Khoá - Ngành</th><th>Môn</th>${tos.map((t) => `<th>Cần ${esc(TO_SHORT[t])}</th>`).join("")}<th></th></tr></thead>
@@ -425,7 +446,7 @@ export async function endYearFromSettings() {
     text: "Ứng dụng sẽ tạo báo cáo Google Sheets và gửi liên kết cho bạn trước khi chuyển sang năm học mới.",
     rows: [["Năm học tiếp theo", next], ["Email nhận báo cáo", "duongthanhtu.dnu@gmail.com"], ["Sau khi kết thúc", "Reset ca trước app về 0; nâng khóa học lên một khóa; giữ lịch sử năm cũ"]],
     warn: "Đây là thao tác chốt năm. Hãy chắc chắn đã hoàn tất phân công và thống kê của năm học hiện tại.",
-    ok: "Xuất báo cáo và kết thúc", cancel: "Quay lại", danger: true,
+    ok: "Xuất báo cáo và kết thúc", cancel: "Quay lại", danger: true, confirmText: year,
   });
   if (!confirmed) return;
   const button = $("btnEndYear"); button.disabled = true; button.textContent = "Đang chốt năm học…";
@@ -445,7 +466,7 @@ export async function endYearFromSettings() {
     toast(`Đã chuyển sang năm học ${result.nextYear}.`);
     S.render();
   } catch (e) {
-    $("yearEndErr").textContent = ({ auth: "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.", forbidden: "Chỉ tổ trưởng mới được kết thúc năm học.", already_closed: "Năm học này đã được kết thúc trước đó.", year_changed: "Năm học đã thay đổi. Tải lại trang rồi kiểm tra lại.", "Năm học trong CauHinh phải có dạng 2026-2027.": "Năm học trong cấu hình chưa đúng định dạng YYYY-YYYY." })[e.message] || "Chưa hoàn tất được. Hãy mở tab mới và kiểm tra tab NhatKyDongBo trước khi thử lại.";
+    $("yearEndErr").textContent = ({ auth: "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.", forbidden: "Chỉ quản trị toàn khoa mới được kết thúc năm học.", already_closed: "Năm học này đã được kết thúc trước đó.", year_changed: "Năm học đã thay đổi. Tải lại trang rồi kiểm tra lại.", "Năm học trong CauHinh phải có dạng 2026-2027.": "Năm học trong cấu hình chưa đúng định dạng YYYY-YYYY." })[e.message] || "Chưa hoàn tất được. Hãy mở tab mới và kiểm tra tab NhatKyDongBo trước khi thử lại.";
   } finally { button.disabled = false; button.textContent = "Xuất thống kê và kết thúc năm học"; }
 }
 
@@ -472,7 +493,7 @@ async function delRow(id) {
   const busy = tos.map((t) => takenOf(s.dotId, id, t)).reduce((a, b) => a + b, 0);
   if (busy) return toast(`Ca này đã có ${busy} người đăng ký. Hãy nhờ họ huỷ trước khi xoá.`);
   if (!(await ask({ title: "Xoá ca thi này?", text: `Chỉ xoá phần của ${scopeLabel()}; tổ khác vẫn giữ nguyên.`, ok: "Xoá ca", cancel: "Giữ lại", danger: true,
-    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · ${caInfo(s.ca).start}`], ["Khoá - Ngành", `Khoá ${s.khoa} · ${s.nganh}`]] }))) return;
+    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · ${caInfo(s.ca).start}`], ["Khoá - Ngành", slotWho(s)]] }))) return;
   const upd = {}; tos.forEach((t) => (upd["need.t" + t] = 0));
   try { await updateDoc(doc(db, "slots", id), upd); toast("Đã xoá ca."); }
   catch (e) { toast("Không xoá được (đợt có thể đã đóng)."); }

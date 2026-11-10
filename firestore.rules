@@ -70,8 +70,13 @@ service cloud.firestore {
         && request.resource.data.namHoc == dotData(request.resource.data.dotId).namHoc
         && request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && request.resource.data.ca in [1, 2, 3, 4]
-        && request.resource.data.nganh in ['SPA', 'NNA']
         && request.resource.data.khoa is int
+        && (
+          (request.resource.data.nganh in ['SPA', 'NNA'])
+          // Ca thi của khoa khác: khoa = 0, nganh = KHAC<TÊN VIẾT LIỀN>, donVi = tên hiển thị
+          || (request.resource.data.khoa == 0 && request.resource.data.nganh.matches('^KHAC[A-Z0-9]{1,12}$')
+              && request.resource.data.donVi is string && request.resource.data.donVi.size() > 0 && request.resource.data.donVi.size() <= 60)
+        )
         && s == request.resource.data.dotId + '-' + request.resource.data.date.replace('-', '') + '-c' + string(request.resource.data.ca) + '-k' + string(request.resource.data.khoa) + '-' + request.resource.data.nganh
         && needCreateOk(request.resource.data.need);
       allow update: if isTeacher() && isManager()
