@@ -120,11 +120,16 @@ Không có trang đăng nhập riêng cho admin: admin là **một tài khoản 
 Chưa vào được thì chạy menu **Gác thi → Kiểm tra đăng nhập của một email…**: báo từng điều kiện đã đủ chưa (✔ / ✘) và việc cần làm tiếp.
 
 ## 4. Quy trình mỗi đợt thi
-1. Admin: **Tạo đợt thi mới** (trạng thái `SOAN`) → Đồng bộ.
-2. Tổ trưởng từng tổ: **Quản lý → Thêm ca thi mới** (cùng một ca thì các tổ tự gộp số của mình vào). Theo dõi ở danh sách "Ca đã thêm", sửa hoặc xoá được khi chưa có ai đăng ký.
+1. Tổ trưởng: **Quản lý → Thêm ca thi mới**, đặt tên đợt (trạng thái `SOAN`) rồi nhập lịch. Đợt cũng được ghi vào tab `Dot` trong Sheet.
+2. Tổ trưởng từng tổ: nhập ca (cùng một ca thì các tổ tự gộp số của mình vào). Theo dõi ở danh sách "Ca đã thêm", sửa hoặc xoá được khi chưa có ai đăng ký.
 3. Admin: đổi trạng thái đợt sang `MO`, kiểm tra hạn chót → Đồng bộ. Thông báo cho GV.
 4. GV đăng ký. Tổ trưởng theo dõi ở **Thống kê giảng viên** (bấm tên GV để xem từng ca) và danh sách "Ca còn thiếu người".
 5. Hết hạn: admin đổi sang `DONG` → Đồng bộ → **Kéo đăng ký + Xuất MẪU** → nộp.
+
+## 4a. Chuyển sang năm học mới
+- Badge trên đầu màn hình hiển thị năm học hiện tại. Tổ trưởng đặt tên đợt mới ngay trong trang nhập ca; đợt sẽ tự thuộc năm học trên badge.
+- Khi chốt năm, tổ trưởng mở **Cài đặt → Kết thúc năm học**. Hệ thống tạo Google Sheet thống kê theo giảng viên và ca, gửi liên kết tới `duongthanhtu.dnu@gmail.com`, đặt số ca trước app về 0 và chuyển cấu hình sang năm kế tiếp. Lịch đăng ký cũ vẫn được lưu.
+- Danh sách khóa tự tăng một khóa (ví dụ 13–16 thành 14–17), cùng với khóa năm nhất. Tổ trưởng xác nhận trong hộp thoại trước khi chốt.
 
 ## 5. Mail
 - **Nhắc lịch:** gửi khi ca còn ≤ `nhacTruocGio` (mặc định 18) giờ tới giờ **có mặt**. Giờ bắt đầu nổi bật, giờ có mặt ghi nhỏ. Người gửi hiển thị là **tổ trưởng của GV đó** (tên "Họ tên – Tổ trưởng …") và GV bấm *Trả lời* là gửi tới tổ trưởng; địa chỉ gửi thật vẫn là tài khoản chạy script.

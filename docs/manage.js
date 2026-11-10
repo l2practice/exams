@@ -96,9 +96,17 @@ function downloadCsv() {
 // =====================================================================  2. Thêm ca thi mới
 export function addHtml() {
   const dots = S.dots.filter(canEditCa).sort((a, b) => (b.order || 0) - (a.order || 0));
-  if (!dots.length) return `<div class="card center muted">Chưa có đợt nào ở trạng thái SOAN hoặc MO. Nhờ quản trị tạo đợt thi trong Google Sheet rồi chạy "Đồng bộ lên Firebase".</div>`;
   const tos = manageTos();
+  const createPeriod = `<div class="card">
+      <h2>Tạo đợt thi</h2>
+      <p class="small">Đợt mới thuộc năm học ${esc(S.cfg.namHoc || "")}, bắt đầu ở trạng thái soạn lịch.</p>
+      <label for="newDotName">Tên đợt thi</label>
+      <div class="create-dot-row"><input class="field" id="newDotName" maxlength="100" placeholder="Ví dụ: Thi học kỳ 1 năm học 2026–2027"><button type="button" class="primary" id="btnCreateDot">Tạo đợt</button></div>
+      <div class="err" id="dotErr" role="alert"></div><div class="okmsg" id="dotMsg" role="status"></div>
+    </div>`;
+  if (!dots.length) return `<div id="addForm">${createPeriod}<div class="card center muted">Tạo đợt thi để bắt đầu nhập lịch.</div></div>`;
   return `<div id="addForm">
+    ${createPeriod}
     <div class="card">
       <h2>Đợt thi và số giảng viên cần</h2>
       <p class="small">Bạn nhập số giảng viên cần của <b>${esc(scopeLabel())}</b>. Tổ khác tự nhập phần của họ cho cùng ca (cùng đợt, ngày, ca, khoá, ngành thì gộp vào một ca).</p>
@@ -377,6 +385,70 @@ export function refreshAddList() {
     <tbody>${rows || `<tr><td colspan="${5 + tos.length}" class="muted">Chưa có ca nào của ${esc(scopeLabel())} trong đợt này.</td></tr>`}</tbody></table></div>`;
 }
 
+/** Refresh the current-year exam-period dropdown after a leader creates a new period. */
+export function refreshAddPeriods(preferred = "") {
+  const select = $("addDot"); if (!select) return;
+  const selected = preferred || select.value;
+  const dots = S.dots.filter(canEditCa).sort((a, b) => (b.order || 0) - (a.order || 0));
+  select.innerHTML = dots.map((d) => `<option value="${esc(d.id)}">${esc(d.name)} (${esc(STATUS_LABEL[statusOf(d)])})</option>`).join("");
+  if (dots.some((d) => d.id === selected)) select.value = selected;
+}
+
+async function createExamPeriod() {
+  const name = $("newDotName")?.value.trim() || "";
+  $("dotErr").textContent = ""; $("dotMsg").textContent = "";
+  if (!name) { $("dotErr").textContent = "Nhập tên đợt thi trước."; return; }
+  const button = $("btnCreateDot"); button.disabled = true; button.textContent = "Đang tạo…";
+  try {
+    if (!scriptUrl) throw new Error("no_url");
+    const idToken = await auth.currentUser.getIdToken();
+    const response = await fetch(scriptUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "createDot", idToken, name }) });
+    const result = await response.json();
+    if (!result.ok) throw new Error(result.error || "failed");
+    $("newDotName").value = "";
+    $("dotMsg").textContent = `Đã tạo “${result.name}” cho năm học ${result.namHoc}.`;
+    refreshAddPeriods(result.id);
+    setTimeout(() => refreshAddPeriods(result.id), 700);
+  } catch (e) {
+    $("dotErr").textContent = ({ auth: "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.", forbidden: "Chỉ quản lý được tạo đợt thi.", duplicate: "Đã có đợt cùng tên trong năm học này." })[e.message] || "Chưa tạo được đợt. Kiểm tra kết nối rồi thử lại.";
+  } finally { button.disabled = false; button.textContent = "Tạo đợt"; }
+}
+
+/** Called from the Settings page. The server independently checks the leader role. */
+export async function endYearFromSettings() {
+  const year = String(S.cfg.namHoc || "");
+  const next = year.replace(/^(\d{4})-(\d{4})$/, (_, a, b) => `${Number(a) + 1}-${Number(b) + 1}`);
+  if (next === year) return toast("Năm học trong cấu hình chưa đúng định dạng YYYY-YYYY.");
+  const confirmed = await ask({
+    title: `Kết thúc năm học ${year}?`,
+    text: "Ứng dụng sẽ tạo báo cáo Google Sheets và gửi liên kết cho bạn trước khi chuyển sang năm học mới.",
+    rows: [["Năm học tiếp theo", next], ["Email nhận báo cáo", "duongthanhtu.dnu@gmail.com"], ["Sau khi kết thúc", "Reset ca trước app về 0; nâng khóa học lên một khóa; giữ lịch sử năm cũ"]],
+    warn: "Đây là thao tác chốt năm. Hãy chắc chắn đã hoàn tất phân công và thống kê của năm học hiện tại.",
+    ok: "Xuất báo cáo và kết thúc", cancel: "Quay lại", danger: true,
+  });
+  if (!confirmed) return;
+  const button = $("btnEndYear"); button.disabled = true; button.textContent = "Đang chốt năm học…";
+  $("yearEndErr").textContent = ""; $("yearEndMsg").textContent = "";
+  try {
+    if (!scriptUrl) throw new Error("no_url");
+    const idToken = await auth.currentUser.getIdToken();
+    const response = await fetch(scriptUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "endYear", idToken, namHoc: year }) });
+    const result = await response.json();
+    if (!result.ok) {
+      if (result.error === "already_closed" && result.reportUrl) window.open(result.reportUrl, "_blank", "noopener");
+      throw new Error(result.error || "failed");
+    }
+    S.me.prior = 0; S.cfg = { ...S.cfg, namHoc: result.nextYear, khoaHopLe: result.cohorts, khoaNam1: result.cohorts[result.cohorts.length - 1] };
+    $("yearEndMsg").innerHTML = `Đã kết thúc ${esc(result.year)}. ${result.mailSent ? "Báo cáo đã gửi qua email." : "Không gửi được email; bạn vẫn có thể mở báo cáo tại đây."} <a href="${esc(result.reportUrl)}" target="_blank" rel="noopener">Mở Google Sheets</a>`;
+    toast(`Đã chuyển sang năm học ${result.nextYear}.`);
+    S.render();
+  } catch (e) {
+    $("yearEndErr").textContent = ({ auth: "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.", forbidden: "Chỉ tổ trưởng mới được kết thúc năm học.", already_closed: "Năm học này đã được kết thúc trước đó.", year_changed: "Năm học đã thay đổi. Tải lại trang rồi kiểm tra lại.", "Năm học trong CauHinh phải có dạng 2026-2027.": "Năm học trong cấu hình chưa đúng định dạng YYYY-YYYY." })[e.message] || "Chưa hoàn tất được. Hãy mở tab mới và kiểm tra tab NhatKyDongBo trước khi thử lại.";
+  } finally { button.disabled = false; button.textContent = "Xuất thống kê và kết thúc năm học"; }
+}
+
 async function saveRow(id) {
   const s = findSlot(id); if (!s) return;
   const upd = {};
@@ -420,6 +492,7 @@ export function manageClick(e) {
   if (e.target.closest("#btnCsv")) { downloadCsv(); return true; }
   if (e.target.closest("#btnAddPrev")) { runAdd(true); return true; }
   if (e.target.closest("#btnAddGo")) { runAdd(false); return true; }
+  if (e.target.closest("#btnCreateDot")) { createExamPeriod(); return true; }
   if (e.target.closest("#btnScanAdd")) { applyScan(); return true; }
   if (e.target.closest("#btnScanClear")) { scanRows = []; $("scanPreview").innerHTML = ""; $("scanMsg").textContent = ""; return true; }
   if ((el = e.target.closest("[data-save]"))) { saveRow(el.dataset.save); return true; }

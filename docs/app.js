@@ -5,10 +5,10 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, getDoc, updateDoc, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { resetUrl } from "./firebase-config.js";
-import { auth, db, S, $, esc, toast, TO_LABEL, TO_SHORT, isManager } from "./core.js";
+import { auth, db, S, $, esc, toast, TO_LABEL, TO_SHORT, isManager, statusOf } from "./core.js";
 import { IC, LOGO, icon } from "./icons.js";
 import { overviewHtml, mineHtml, registerHtml, meClick, meChange, afterRender } from "./me.js";
-import { statsHtml, addHtml, slotsHtml, refreshAddList, manageClick, manageChange } from "./manage.js";
+import { statsHtml, addHtml, slotsHtml, refreshAddList, refreshAddPeriods, endYearFromSettings, manageClick, manageChange } from "./manage.js";
 
 // =====================================================================  Đăng nhập
 const EMAIL_KEY = "gacthi.email";
@@ -126,6 +126,7 @@ function render() {
   $("awNav").innerHTML = navHtml();
   $("awPageTitle").textContent = r.title;
   $("awSub").textContent = S.route.startsWith("mg:") ? `Quản lý · ${scopeText()}` : "";
+  $("awYearBadge").textContent = S.cfg.namHoc ? `Năm học ${S.cfg.namHoc}` : "";
   $("awAvatar").textContent = initials(S.me.name);
   $("awUserName").textContent = $("awUserName2").textContent = S.me.name || S.me.email;
   $("awUserRole").textContent = roleLabel();
@@ -135,11 +136,16 @@ function render() {
   if (!$("subnav").hidden) $("subnav").innerHTML = ["mg:stats", "mg:add", "mg:slots"].map((k) => `<button class="${S.route === k ? "on" : ""}" data-go="${k}">${esc(ROUTES[k].short)}</button>`).join("");
   $("settings").hidden = S.route !== "settings";
   $("page").hidden = S.route === "settings";
-  if (S.route === "settings") return;
+  if (S.route === "settings") {
+    $("yearEndPanel").hidden = !(S.me.leadTo > 0);
+    $("yearEndCurrent").textContent = S.cfg.namHoc || "";
+    return;
+  }
 
   const page = $("page");
   if (S.route === "mg:add") {                       // trang có ô nhập: không vẽ lại cả trang khi dữ liệu realtime đổi
-    if (!$("addForm")) page.innerHTML = addHtml();
+    if (!$("addForm") || (!$("addDot") && S.dots.some((d) => ["SOAN", "MO"].includes(statusOf(d))))) page.innerHTML = addHtml();
+    refreshAddPeriods();
     return;
   }
   if (S.route === "mg:slots") {
@@ -156,6 +162,7 @@ S.render = render;
 
 $("page").onclick = (e) => { if (manageClick(e)) return; meClick(e, { store }); };
 $("page").onchange = (e) => { if (manageChange(e)) return; meChange(e); };
+$("btnEndYear").onclick = () => endYearFromSettings();
 
 // =====================================================================  Cài đặt: đổi mật khẩu
 $("pwForm").onsubmit = async (e) => {

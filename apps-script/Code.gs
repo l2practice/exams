@@ -340,7 +340,6 @@ function syncUp(opts) {
   opts = opts || {};
   const cfg = getCfg();
   const dots = readDots();
-  if (!dots.length) throw new Error('Chưa có đợt thi nào. Chạy "0. Tạo đợt thi mới" trước.');
   const badD = dots.filter((d) => !/^[A-Za-z0-9-]{2,30}$/.test(d.ma));
   if (badD.length) throw new Error('Mã đợt sai: ' + badD.map((d) => d.ma).join(', '));
   const all = readTeachers();
@@ -398,8 +397,113 @@ function doPost(e) {
     if (req.action === 'reset') return out(resetPassword(String(req.email || '').trim().toLowerCase()));
     if (req.action === 'scan') return out(scanSchedule(req));
     if (req.action === 'shift') return out(changeShift(req));
+    if (req.action === 'createDot') return out(createDot(req));
+    if (req.action === 'endYear') return out(endAcademicYear(req));
     return out({ ok: false, error: 'unknown action' });
-  } catch (err) { return out({ ok: false, error: 'bad request' }); }
+  } catch (err) { return out({ ok: false, error: String(err.message || 'bad request') }); }
+}
+
+/** Leaders create named exam periods from the web; Sheet remains the source for future syncs. */
+function createDot(req) {
+  const cfg = getCfg(), email = verifyIdToken(req.idToken, cfg);
+  if (!email) return { ok: false, error: 'auth' };
+  const manager = readTeachers().find((t) => t.email === email && (t.admin || t.leadTo > 0));
+  if (!manager) return { ok: false, error: 'forbidden' };
+  const name = String(req.name || '').trim().replace(/\s+/g, ' ');
+  if (!name || name.length > 100) return { ok: false, error: 'name' };
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName(SH.DOT);
+    if (!sh) return { ok: false, error: 'missing_dot_sheet' };
+    const normalized = name.toLowerCase();
+    if (readDots().some((d) => d.namHoc === cfg.namHoc && d.ten.toLowerCase() === normalized)) return { ok: false, error: 'duplicate' };
+    const slug = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd')
+      .toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 14) || 'DOT-THI';
+    const ma = `${slug}-${Utilities.formatDate(new Date(), TZ, 'yyMMddHHmmss')}`;
+    const order = Math.max(0, sh.getLastRow() - 1) + 1;
+    sh.appendRow([ma, name, name.toUpperCase(), 'SOAN', '', '', cfg.namHoc]);
+    const deadline = new Date(Date.now() + 365 * 86400000);
+    fsCommit([{ path: 'dots/' + ma, data: { name, hocKy: name.toUpperCase(), status: 'SOAN', open: false, deadline, namHoc: cfg.namHoc, order } }]);
+    return { ok: true, id: ma, name, namHoc: cfg.namHoc };
+  } finally { lock.releaseLock(); }
+}
+
+function nextSchoolYear(year) {
+  const m = String(year || '').match(/^(\d{4})-(\d{4})$/);
+  if (!m || Number(m[2]) !== Number(m[1]) + 1) throw new Error('Năm học trong CauHinh phải có dạng 2026-2027.');
+  return `${Number(m[1]) + 1}-${Number(m[2]) + 1}`;
+}
+
+/** Close the current school year, email a Google Sheets report, reset prior counts and roll cohorts forward. */
+function endAcademicYear(req) {
+  let cfg = getCfg();
+  const email = verifyIdToken(req.idToken, cfg);
+  if (!email) return { ok: false, error: 'auth' };
+  const leader = readTeachers().find((t) => t.email === email && t.leadTo > 0);
+  if (!leader) return { ok: false, error: 'forbidden' };
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    cfg = getCfg();
+    const year = cfg.namHoc, nextYear = nextSchoolYear(year);
+    if (String(req.namHoc || '') !== year) return { ok: false, error: 'year_changed' };
+    const priorClose = readDoc('yearClosures/' + year);
+    if (priorClose) return { ok: false, error: 'already_closed', reportUrl: priorClose.reportUrl || '' };
+
+    const teachers = readTeachers();
+    const regs = fsList('regs').filter((r) => r.namHoc === year);
+    const slots = new Map(fsList('slots').map((s) => [s._id, s]));
+    const dots = new Map(fsList('dots').map((d) => [d._id, d]));
+    const byEmail = new Map();
+    regs.forEach((r) => byEmail.set(r.email, (byEmail.get(r.email) || []).concat(r)));
+    const min = cfg.toiThieu || 20;
+    const summary = teachers.map((t) => {
+      const own = byEmail.get(t.email) || [], total = Number(t.prior || 0) + own.length;
+      return [t.name, t.email, TO_LABEL[t.to] || t.to, Number(t.prior || 0), own.length, total, min,
+        total < min ? `Thiếu ${min - total}` : total === min ? 'Đủ' : `Dư ${total - min}`];
+    }).sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'vi'));
+
+    const report = SpreadsheetApp.create(`Thống kê gác thi năm học ${year}`);
+    const sumSheet = report.getSheets()[0]; sumSheet.setName('Tổng hợp');
+    sumSheet.getRange(1, 1, 1, 8).merge().setValue(`THỐNG KÊ GÁC THI NĂM HỌC ${year}`).setFontWeight('bold').setFontSize(16);
+    sumSheet.getRange(2, 1, 1, 2).merge().setValue(`Ngày kết thúc: ${Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm')}`);
+    sumSheet.getRange(4, 1, 1, 8).setValues([['Họ tên', 'Email', 'Tổ', 'Ca trước app', 'Ca trên app', 'Tổng ca', 'Định mức', 'Trạng thái']]).setFontWeight('bold');
+    if (summary.length) sumSheet.getRange(5, 1, summary.length, 8).setValues(summary);
+    sumSheet.setFrozenRows(4); sumSheet.autoResizeColumns(1, 8);
+    const detail = report.insertSheet('Chi tiết ca');
+    detail.getRange(1, 1, 1, 10).setValues([['Ngày', 'Ca', 'Khóa', 'Ngành', 'Môn thi', 'Đợt thi', 'Email', 'Họ tên', 'Tổ chỉ tiêu', 'Năm học']]).setFontWeight('bold');
+    const detailRows = regs.map((r) => {
+      const s = slots.get(r.slotId) || {}, d = dots.get(r.dotId) || {};
+      return [r.date || '', r.ca || '', s.khoa || '', s.nganh || '', s.mon || '', d.name || r.dotId || '', r.email || '', r.name || '', TO_LABEL[r.to] || r.to || '', year];
+    }).sort((a, b) => String(a[0]).localeCompare(String(b[0])) || Number(a[1]) - Number(b[1]));
+    if (detailRows.length) detail.getRange(2, 1, detailRows.length, 10).setValues(detailRows);
+    detail.setFrozenRows(1); detail.autoResizeColumns(1, 10);
+
+    const cfgSheet = SpreadsheetApp.getActive().getSheetByName(SH.CFG);
+    const cfgRows = cfgSheet.getDataRange().getValues();
+    const byKey = new Map(cfgRows.slice(1).map((r, i) => [String(r[0]).trim(), i + 2]));
+    const cohorts = String(cfg.khoaHopLe || '13,14,15,16').split(',').map((x) => Number(x.trim())).filter(Boolean).map((k) => k + 1);
+    const nextKhoaNam1 = Number(cfg.khoaNam1 || Math.max(...cohorts, 16)) + 1;
+    [['namHoc', nextYear], ['khoaHopLe', cohorts.join(',')], ['khoaNam1', nextKhoaNam1]].forEach(([key, value]) => {
+      const row = byKey.get(key); if (row) cfgSheet.getRange(row, 2).setValue(value);
+    });
+    const gvSheet = SpreadsheetApp.getActive().getSheetByName(SH.GV);
+    if (gvSheet.getLastRow() > 1) gvSheet.getRange(2, 4, gvSheet.getLastRow() - 1, 1).setValues(Array.from({ length: gvSheet.getLastRow() - 1 }, () => [0]));
+
+    const writes = teachers.map((t) => ({ path: 'teachers/' + t.email, data: { prior: 0 } }));
+    const caTimes = {}; [1, 2, 3, 4].forEach((c) => caTimes[c] = cfg.ca[c]);
+    writes.push({ path: 'config/main', data: { namHoc: nextYear, minCa: min, khoaNam1: nextKhoaNam1, khoaHopLe: cohorts, caTimes } });
+    const reportUrl = report.getUrl();
+    fsCommit(writes);
+
+    let mailSent = true;
+    try {
+      MailApp.sendEmail({ to: 'duongthanhtu.dnu@gmail.com', name: cfg.tenNguoiGui || 'Gác thi DNU',
+        subject: `Thống kê và kết thúc năm học ${year} – Gác thi DNU`,
+        body: `Đã kết thúc năm học ${year}. Báo cáo thống kê ${teachers.length} giảng viên và ${regs.length} lượt gác thi: ${reportUrl}\n\nNăm học tiếp theo đã chuyển sang ${nextYear}; danh sách khóa học đã nâng lên ${cohorts.join(', ')}. Số ca gác trước ứng dụng đã được đặt lại về 0. Lịch sử năm cũ vẫn được giữ trong báo cáo và Firestore.` });
+    } catch (mailError) { mailSent = false; }
+    fsCommit([{ path: 'yearClosures/' + year, data: { namHoc: year, nextYear, reportUrl, teacherCount: teachers.length, regCount: regs.length, mailSent, closedAt: new Date() } }]);
+    return { ok: true, mailSent, year, nextYear, reportUrl, teachers: teachers.length, regs: regs.length, cohorts };
+  } finally { lock.releaseLock(); }
 }
 function randomPassword(n) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'; // bỏ ký tự dễ nhầm: 0 O 1 l I
