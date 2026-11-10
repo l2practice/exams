@@ -78,6 +78,7 @@ textarea.field{resize:vertical}
 .seg button.on{background:var(--p);color:#fff;box-shadow:0 3px 10px rgba(90,69,221,.3)}
 .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px}
 .toolbar .grow{flex:1}
+.shift-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;justify-content:flex-end}
 
 /* ── số liệu ── */
 .kpis4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}

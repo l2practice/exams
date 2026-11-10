@@ -69,13 +69,13 @@ Repo *Settings → Pages → Deploy from a branch → `main` → `/docs` → Sav
 - **Xoá GV khỏi sheet: GV mất quyền vào web** (gỡ khỏi `teachers`/`roster`; lịch sử đăng ký giữ nguyên). Nếu sheet không còn GV hợp lệ nào thì script không xoá ai, để lỡ xoá nhầm cả bảng không làm mất quyền mọi người.
 - Dòng đang gõ dở (thiếu email/tên/tổ) được bỏ qua, các dòng đủ thông tin vẫn đồng bộ.
 - Kết quả từng lần nằm ở tab **`NhatKyDongBo`** (mới nhất ở trên: OK / CẦN XEM / LỖI kèm lý do). Tắt bằng **Gác thi → Tắt tự động đồng bộ**.
-- Ca thi và đăng ký không đi qua sheet (web ghi thẳng Firestore), nên không cần đồng bộ.
+- Ca thi do tổ trưởng tạo trên web; đăng ký, đổi và hủy ca đi qua Apps Script để xếp chỗ chéo tổ, áp dụng hạn 48 giờ và gửi email cho tổ trưởng.
 
 ### Bước 6 – Chạy thử trọn vòng
 1. Mở web bằng cửa sổ ẩn danh, đăng nhập bằng email tổ trưởng (lần đầu dùng mật khẩu do Khoa cấp, web mở sẵn trang Cài đặt để đổi).
 2. **Quản lý → Thêm ca thi mới**: chọn đợt `SOAN`, nhập ngày, tick ca/khoá/ngành, số GV cần của tổ → *Xem trước* → *Thêm vào đợt*.
 3. Ở Sheet đổi trạng thái đợt thành `MO` → **Đồng bộ lại**.
-4. Đăng nhập bằng một tổ viên → thẻ **Đăng ký ca thi** → bấm **+**. Thử thêm: huỷ ca, đổi mật khẩu, Quên mật khẩu.
+4. Đăng nhập bằng một tổ viên → thẻ **Đăng ký ca thi** → bấm **+**. Kiểm tra đăng ký chéo tổ, đổi ca cho giảng viên khác, hủy ca trước hạn 48 giờ, đổi mật khẩu và Quên mật khẩu.
 5. **Gác thi → 2. Kéo đăng ký về Sheet + Xuất MẪU nộp** → so tab `XuatMau_<mã>` với file mẫu của trường → **3. Lưu file .xlsx**.
 6. **Gác thi → Gửi thử mail nhắc cho tôi** → nếu ổn: **Cài lịch gửi mail nhắc (mỗi giờ)**.
 
@@ -90,20 +90,26 @@ Repo *Settings → Pages → Deploy from a branch → `main` → `/docs` → Sav
 
 ## 3c0. Ca của tôi: bảng · danh sách · lịch tuần
 Trang **Ca của tôi** (và Lịch sử gác thi) có ba kiểu xem, nhớ lựa chọn của từng người:
-- **Bảng**: ngày, ca, khoá-ngành, môn, đợt, cột **Cảnh báo**, nút Huỷ.
+- **Bảng**: ngày, ca, khoá-ngành, môn, đợt, cột **Cảnh báo**, nút Đổi và Huỷ.
 - **Danh sách**: nhóm theo ngày; ngày có từ 2 ca được đánh dấu vàng.
-- **Lịch tuần** kiểu Google Calendar: 7 cột ngày × 4 hàng ca, nút ‹ Tuần này › để đổi tuần, ca đã đăng ký hiện thành ô màu (bấm ca sắp tới để huỷ).
+- **Lịch tuần** kiểu Google Calendar: 7 cột ngày × 4 hàng ca, nút ‹ Tuần này › để đổi tuần, ca đã đăng ký hiện thành ô màu (bấm ca sắp tới để chọn người thay).
 **Cảnh báo:** ô vàng = ngày gác từ 2 ca trở lên; ô đỏ = trùng giờ. Khi đăng ký, hộp thoại xác nhận có khung **⚠ Lưu ý** nếu đã có ca khác cùng ngày (nhắc nếu hai ca liền nhau), dòng danh sách có nhãn "⚠ Cùng ngày", ca trùng giờ bị chặn ("Trùng giờ").
 
 ## 3c. Trang Đăng ký ca thi của giảng viên
 Ba kiểu xem (nhớ lựa chọn của từng người), cùng có bộ lọc đợt / khoá / ngành:
-- **Danh sách** (mặc định): mỗi ca một dòng (Ngày · Ca · Khoá · Ngành · Môn · đã đăng ký/cần của tổ mình · nút Đăng ký). Chỉ hiện ca sắp tới và cần tổ của giảng viên; gộp **mọi đợt** nên đợt sát hoặc trùng ngày nhau vẫn thấy chung.
-- **Bảng theo đợt**: ngày × (ca, khoá-ngành), mỗi ô là số đã đăng ký / cần của tổ mình (đỏ = chưa ai, vàng = một phần, xanh = đủ, tím = của bạn).
+- **Danh sách** (mặc định): mỗi ca một dòng (Ngày · Ca · Khoá · Ngành · Môn · đã đăng ký/cần · nút Đăng ký). Hiện ca sắp tới còn chỗ ở bất kỳ tổ nào; ứng dụng ưu tiên xếp giảng viên vào chỉ tiêu tổ của họ trước.
+- **Bảng theo đợt**: ngày × (ca, khoá-ngành), mỗi ô là số đã đăng ký / tổng số cần của các tổ (đỏ = chưa ai, vàng = một phần, xanh = đủ, tím = của bạn).
 - **Bảng giảng viên**: mỗi đợt một bảng giống file mẫu của trường (hàng = giảng viên, dấu X).
 **Phía trên các dòng có khung xem trước** (cho danh sách và bảng theo đợt): bấm một ca thì
 1. **Lịch gác của bạn**: bảng các ca đã đăng ký, chèn **ca đang chọn** (tô màu) vào đúng vị trí theo thời gian, kèm câu "nằm sau ca … / trước ca … (cách n ngày)", cảnh báo **trùng giờ** và các ca đã có trong cùng ngày;
 2. **Chi tiết ngày**: bảng ca × Tổ 1 / Tổ 2 / Tổ 3 của cả ngày (gộp các đợt), ca của bạn trong ngày, danh sách người đã đăng ký ca đang chọn, nút Đăng ký / Huỷ.
 Hộp thoại **Xác nhận đăng ký** nêu rõ ngày, ca, giờ có mặt, khoá-ngành, môn và **ca gần nhất trước / sau** ca này.
+
+## 3c1. Đổi ca và huỷ ca
+- Trong **Ca của tôi**, bấm **Đổi** và chọn tên một giảng viên thay thế. Không cần nhập lý do hay chờ tổ trưởng duyệt; hệ thống chuyển ca ngay và gửi email cho tổ trưởng của chỉ tiêu tổ đang được lấp đầy.
+- Nếu không có người thay, giảng viên có thể **Huỷ**. Chỉ được huỷ trước giờ bắt đầu ca ít nhất 48 giờ; ca sẽ bị bỏ khỏi lịch cá nhân và tổ trưởng nhận email để kiểm tra số người.
+- Người thay thế có thể thuộc bất kỳ tổ nào. Danh sách gợi ý ưu tiên giảng viên thuộc tổ phụ trách chỉ tiêu ca.
+- Sau khi cập nhật code, dán `firestore.rules` mới vào Firebase và Publish; dán `apps-script/Code.gs` mới vào Apps Script, Save và Deploy Web App bằng **New version**.
 
 ## 3d. Admin đăng nhập thế nào, và "vì sao chưa vào được"
 Không có trang đăng nhập riêng cho admin: admin là **một tài khoản giảng viên bình thường có vai trò ở cột E của `GiaoVien`** (`x` = quản trị toàn khoa, hoặc `tt1/tt2/tt3` = tổ trưởng). Việc của admin chia hai nơi: trên **Google Sheet** (menu Gác thi: tạo đợt, đồng bộ, xuất mẫu, mail) và trên **web** (Quản lý: thống kê, thêm ca). Để vào web cần đủ 4 thứ:

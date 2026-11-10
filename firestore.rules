@@ -81,50 +81,17 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ---------------------------------------------------------------- Đăng ký (chống vượt số lượng không cần bộ đếm)
-    // Mỗi "chỗ" của một tổ trong một ca là một tài liệu claims/<slotId>_t<tổ>_<k>, 1 <= k <= số GV cần.
-    // Mã tài liệu là duy nhất => người thứ hai tranh cùng chỗ sẽ bị từ chối.
-    // Đăng ký = ghi đồng thời regs + claims trong một batch; mỗi bên kiểm tra bên kia.
+    // ---------------------------------------------------------------- Đăng ký (server-authoritative)
+    // Tạo/đổi/huỷ được tuần tự hoá trong Apps Script để hỗ trợ gác chéo tổ, ưu tiên tổ nhà,
+    // áp dụng hạn 48 giờ và gửi email tổ trưởng. Client chỉ được đọc.
     match /claims/{c} {
       allow read: if false;
-      allow create: if isTeacher()
-        && request.resource.data.email == me()
-        && request.resource.data.to == teacher().to
-        && dotOpen(request.resource.data.dotId)
-        && slotOf(request.resource.data.slotId).dotId == request.resource.data.dotId
-        && request.resource.data.k is int
-        && request.resource.data.k >= 1
-        && request.resource.data.k <= slotOf(request.resource.data.slotId).need.get('t' + string(request.resource.data.to), 0)
-        && c == request.resource.data.slotId + '_t' + string(request.resource.data.to) + '_' + string(request.resource.data.k)
-        && existsAfter(/databases/$(db)/documents/regs/$(request.resource.data.regId))
-        && getAfter(/databases/$(db)/documents/regs/$(request.resource.data.regId)).data.claimId == c;
-      allow update: if false;
-      allow delete: if isTeacher()
-        && resource.data.email == me()
-        && dotOpen(resource.data.dotId)
-        && !existsAfter(/databases/$(db)/documents/regs/$(resource.data.regId));
+      allow create, update, delete: if false;
     }
 
-    // Mã đăng ký = <ngày>_<ca>__<email> => mỗi GV chỉ có 1 ca tại một (ngày, ca), dù thuộc đợt nào
     match /regs/{r} {
       allow read: if isTeacher();
-      allow create: if isTeacher()
-        && request.resource.data.email == me()
-        && request.resource.data.to == teacher().to
-        && request.resource.data.name == teacher().name
-        && dotOpen(request.resource.data.dotId)
-        && slotOf(request.resource.data.slotId).dotId == request.resource.data.dotId
-        && slotOf(request.resource.data.slotId).date == request.resource.data.date
-        && slotOf(request.resource.data.slotId).ca == request.resource.data.ca
-        && slotOf(request.resource.data.slotId).namHoc == request.resource.data.namHoc
-        && r == request.resource.data.date + '_' + string(request.resource.data.ca) + '__' + me()
-        && existsAfter(/databases/$(db)/documents/claims/$(request.resource.data.claimId))
-        && getAfter(/databases/$(db)/documents/claims/$(request.resource.data.claimId)).data.slotId == request.resource.data.slotId;
-      allow update: if false;
-      allow delete: if isTeacher()
-        && resource.data.email == me()
-        && dotOpen(resource.data.dotId)
-        && !existsAfter(/databases/$(db)/documents/claims/$(resource.data.claimId));
+      allow create, update, delete: if false;
     }
   }
 }

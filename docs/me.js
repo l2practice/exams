@@ -1,10 +1,10 @@
 // Các trang của giảng viên: Tổng quan · Đăng ký ca thi · Ca của tôi · Lịch sử gác thi.
-import { doc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
-  db, S, $, esc, toast, ask, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, dmyOf, fmtLong, todayIso, isoOf, khoaNam,
-  statusOf, isRegOpen, STATUS_LABEL, needOf, visibleSlots, findSlot,
+  auth, db, S, $, esc, toast, ask, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, dmyOf, fmtLong, todayIso, isoOf, khoaNam,
+  statusOf, isRegOpen, STATUS_LABEL, needOf, totalNeed, totalTaken, visibleSlots, findSlot,
 } from "./core.js";
 import { icon } from "./icons.js";
+import { scriptUrl } from "./firebase-config.js";
 
 const dotOf = (s) => S.dots.find((d) => d.id === s.dotId);
 const dotName = (id) => S.dots.find((d) => d.id === id)?.name || "";
@@ -29,7 +29,7 @@ const allCounts = () => Object.fromEntries(S.dots.map((d) => [d.id, countsOf(d.i
 
 /** Trạng thái của một ca với tổ của tôi: mine | open | full | na, kèm số liệu. */
 function stateOf(s, cnts, mine) {
-  const need = needOf(s, S.me.to), taken = cnts[s.dotId]?.[s.id]?.["t" + S.me.to] || 0;
+  const need = totalNeed(s), taken = totalTaken(S.regsBy[s.dotId], s.id);
   if (mine.has(s.id)) return { k: "mine", need, taken };
   if (!need) return { k: "na", need, taken };
   return taken >= need ? { k: "full", need, taken } : { k: "open", need, taken };
@@ -37,7 +37,6 @@ function stateOf(s, cnts, mine) {
 /** Lý do không đăng ký được (null = được). */
 function reason(s, cnts) {
   if (!isRegOpen(dotOf(s))) return "Đã đóng";
-  if (!needOf(s, S.me.to)) return "Không cần tổ bạn";
   if (stateOf(s, cnts, new Set()).k === "full") return "Đã đủ";
   if (S.myYear.find((r) => r.date === s.date && r.ca === s.ca)) return "Trùng giờ";
   return null;
@@ -96,8 +95,8 @@ export function mineHtml(tab) {
     (tab !== "past" && list.some((r) => w.clash(r)) ? `<div class="warnbox bad">⚠ Có ca <b>trùng giờ</b>. Hãy huỷ một trong hai ca.</div>` : "") +
     (tab !== "past" && list.some((r) => w.multi(r)) ? `<div class="warnbox">⚠ Có ngày bạn gác <b>từ 2 ca trở lên</b> (đánh dấu màu vàng). Hãy kiểm tra thời gian di chuyển và nghỉ giữa các ca.</div>` : "");
   const act = (r) => {
-    const s = findSlot(r.slotId), canCancel = tab !== "past" && s && isRegOpen(dotOf({ dotId: r.dotId }));
-    return tab === "past" ? `<span class="pill ok">Đã gác</span>` : canCancel ? `<button class="danger sm" data-cancel="${esc(r.slotId)}">Huỷ</button>` : `<span class="pill">Đã chốt</span>`;
+    const s = findSlot(r.slotId);
+    return tab === "past" ? `<span class="pill ok">Đã gác</span>` : s ? shiftActions(s) : `<span class="pill">Đã chốt</span>`;
   };
   if (S.mineView === "list") {
     let html = "", last = "";
@@ -133,8 +132,8 @@ function weekHtml(regs, w, today) {
   const body = [1, 2, 3, 4].map((ca) => `<tr><th class="wkc">Ca ${ca}<br><small>${caInfo(ca).start}</small></th>${days.map((d) => {
     const here = regs.filter((r) => r.date === d && r.ca === ca);
     return `<td class="${d === today ? "today" : ""}">${here.map((r) => {
-      const s = findSlot(r.slotId), bad = here.length > 1, canCancel = r.date >= today && s && isRegOpen(dotOf({ dotId: r.dotId }));
-      return `<div class="evt ${bad ? "clash" : w.multi(r) ? "multi" : ""} ${r.date < today ? "past" : ""}" ${canCancel ? `data-cancel="${esc(r.slotId)}"` : ""} title="${esc(dotName(r.dotId))}${canCancel ? " · bấm để huỷ" : ""}">
+      const s = findSlot(r.slotId), bad = here.length > 1, canChange = r.date >= today && s;
+      return `<div class="evt ${bad ? "clash" : w.multi(r) ? "multi" : ""} ${r.date < today ? "past" : ""}" ${canChange ? `data-exchange="${esc(r.slotId)}"` : ""} title="${esc(dotName(r.dotId))}${canChange ? " · bấm để đổi ca" : ""}">
         <b>${s ? `K${esc(s.khoa)} · ${esc(s.nganh)}` : "Ca"}</b><span>${esc(s?.mon || "")}</span><span class="small">${caInfo(ca).start}</span></div>`;
     }).join("")}</td>`;
   }).join("")}</tr>`).join("");
@@ -142,7 +141,7 @@ function weekHtml(regs, w, today) {
     (multiDays.length ? `<div class="warnbox">⚠ Tuần này có ${multiDays.length} ngày bạn gác từ 2 ca trở lên (${multiDays.map((d) => `${dowOf(d)} ${dmOf(d)}`).join(", ")}).</div>` : "") +
     `<div class="tbl-wrap"><table class="wk"><thead><tr><th class="wkc"></th>${head}</tr></thead><tbody>${body}</tbody></table></div>
     ${inWeek.length ? "" : `<p class="small center">Tuần này bạn chưa có ca nào. Bấm ‹ › để xem tuần khác.</p>`}
-    <p class="small">Bấm một ca sắp tới trên lịch để huỷ. Ô vàng: ngày có từ 2 ca; ô đỏ: trùng giờ.</p>`;
+    <p class="small">Bấm một ca sắp tới trên lịch để chọn người thay thế. Huỷ ca chỉ được trước giờ bắt đầu ít nhất 48 giờ. Ô vàng: ngày có từ 2 ca; ô đỏ: trùng giờ.</p>`;
 }
 
 // =====================================================================  Đăng ký ca thi
@@ -169,27 +168,28 @@ export function registerHtml() {
       ${selHtml("khoa", "Khoá", [["all", "Tất cả khoá"], ...khoas.map((k) => [k, `Khoá ${k}` + (khoaNam(k) ? ` (năm ${khoaNam(k)})` : "")])], S.fKhoa)}
       ${selHtml("nganh", "Ngành", [["all", "Tất cả ngành"], ...nganhs.map((n) => [n, n])], S.fNganh)}
     </div>`;
+  const crossTeamNote = `<p class="small">Bạn có thể đăng ký ca của tổ khác khi còn chỗ. Hệ thống ưu tiên xếp bạn vào chỉ tiêu tổ ${esc(TO_SHORT[S.me.to])} trước.</p>`;
   if (S.regView === "grid") {
-    return bar + `<p class="legend"><span class="cell free sm">+</span> bấm để đăng ký · <span class="cell mine sm">✔</span> ca của bạn, bấm để huỷ · <b>X</b> đồng nghiệp đã đăng ký. Vuốt ngang để xem các ngày khác.</p>` +
+    return bar + crossTeamNote + `<p class="legend"><span class="cell free sm">+</span> bấm để đăng ký · <span class="cell mine sm">✔</span> bấm ca của bạn để chọn người thay · <b>X</b> đồng nghiệp đã đăng ký. Vuốt ngang để xem các ngày khác.</p>` +
       shownDots.map((d) => gridFor(d, mine, pass)).join("");
   }
   if (!items.length) return bar + `<div class="card center muted">Không có ca nào sắp tới khớp bộ lọc.</div>`;
   if (!S.pick || !items.some((s) => s.id === S.pick)) S.pick = items[0].id;           // mặc định chọn ca gần nhất
   const preview = previewHtml(all, cnts, mine);
-  return bar + preview + (S.regView === "matrix" ? shownDots.map((d) => matrixFor(d, cnts, mine, (s) => pass(s) && upcoming(s))).join("") : listRows(items, cnts, mine));
+  return bar + crossTeamNote + preview + (S.regView === "matrix" ? shownDots.map((d) => matrixFor(d, cnts, mine, (s) => pass(s) && upcoming(s))).join("") : listRows(items, cnts, mine));
 }
 
 // ---- danh sách các dòng ca (bảng như bản thiết kế)
 function listRows(items, cnts, mine) {
-  const rows = items.filter((s) => needOf(s, S.me.to) > 0 || mine.has(s.id));
+  const rows = items.filter((s) => totalNeed(s) > 0 || mine.has(s.id));
   if (!rows.length) return `<div class="card center muted">Không có ca nào cần tổ của bạn trong bộ lọc này.</div>`;
   const multi = S.dots.length > 1;
   return `<div class="rtable" id="rtable"><div class="rhead"><div>Ngày thi</div><div>Ca</div><div>Khoá</div><div>Ngành</div><div>Môn</div><div>Đã đăng ký / Cần</div><div style="text-align:right">Trạng thái</div></div>` +
     rows.map((s) => {
       const st = stateOf(s, cnts, mine), why = st.k === "mine" ? null : reason(s, cnts), ci = caInfo(s.ca);
-      const act = st.k === "mine" ? `<span class="pill p">✔ Đã đăng ký</span> <button class="link" data-cancel="${esc(s.id)}" ${isRegOpen(dotOf(s)) ? "" : "disabled"}>Huỷ</button>`
+      const act = st.k === "mine" ? `<span class="pill p">✔ Đã đăng ký</span>${shiftActions(s)}`
         : !why ? `<button class="primary" data-reg="${esc(s.id)}">Đăng ký</button>`
-        : why === "Đã đủ" ? `<span class="pill ok">Đã đủ</span>` : `<span class="pill">${esc(why)}</span>`;
+        : why === "Đã đủ" ? `<span class="pill ok">Đã đủ người</span>` : `<span class="pill">${esc(why)}</span>`;
       return `<div class="rrow ${s.id === S.pick ? "picked" : ""}" data-pick="${esc(s.id)}">
         <div class="c-date rr-date">${esc(dayLabel(s.date))}</div>
         <div class="c-ca">Ca ${s.ca} · ${ci.start}</div><div class="c-k">K${esc(s.khoa)}</div><div class="c-n">${esc(s.nganh)}</div>
@@ -251,7 +251,7 @@ function dayCard(all, p, cnts, mine) {
   const mineToday = S.myYear.filter((r) => r.date === p.date).sort((a, b) => a.ca - b.ca);
   const names = (S.regsBy[p.dotId] || []).filter((r) => r.slotId === p.id);
   const why = mine.has(p.id) ? null : reason(p, cnts);
-  const act = mine.has(p.id) ? `<button class="danger wide" data-cancel="${esc(p.id)}" ${isRegOpen(dotOf(p)) ? "" : "disabled"}>Huỷ đăng ký ca này</button>`
+  const act = mine.has(p.id) ? shiftActions(p)
     : !why ? `<button class="primary wide" data-reg="${esc(p.id)}">Đăng ký ca này</button>` : `<div class="small center" style="padding:6px">${esc(why)}</div>`;
   return `<div class="card"><div class="card-h"><h2>Chi tiết ngày: ${esc(dayLabel(p.date))}</h2></div>
     <table class="dd"><thead><tr><th>Ca</th><th>Khoá</th><th>Ngành</th><th>Tổ 1</th><th>Tổ 2</th><th>Tổ 3</th></tr></thead><tbody>${rows}</tbody></table>
@@ -304,10 +304,10 @@ function gridFor(d, mine, pass) {
   const rowDate = days.map((g) => `<th colspan="${g.n}" class="date"><b>${esc(dowOf(g.date))}</b><br>${dmOf(g.date)}</th>`).join("");
   const rowCa = slots.map((s) => `<th>Ca ${s.ca}<br><small>${caInfo(s.ca).start}</small></th>`).join("");
   const rowKn = slots.map((s) => `<th title="${esc(s.mon || "")}">K${esc(s.khoa)}<br><small>${esc(s.nganh)}</small></th>`).join("");
-  const rowLeft = slots.map((s) => { const need = needOf(s, S.me.to), left = need - (cnt[s.id]?.["t" + S.me.to] || 0); return `<th class="${!need ? "na" : left > 0 ? "okc" : "bad"}">${!need ? "–" : left > 0 ? `Còn ${left}` : "Đủ"}</th>`; }).join("");
+  const rowLeft = slots.map((s) => { const need = totalNeed(s), taken = totalTaken(regs, s.id), left = need - taken; return `<th class="${!need ? "na" : left > 0 ? "okc" : "bad"}">${!need ? "–" : `${taken}/${need}`}</th>`; }).join("");
   const meRow = S.roster.find((r) => r.email === S.me.email) || { name: S.me.name, to: S.me.to };
   const myCells = slots.map((s) => {
-    if (who.has(s.id + "|" + S.me.email)) return `<td class="mine"><button class="cell mine" data-cancel="${esc(s.id)}" ${open ? "" : "disabled"} aria-label="Huỷ ca ${s.ca} ngày ${dmOf(s.date)}">✔</button></td>`;
+    if (who.has(s.id + "|" + S.me.email)) return `<td class="mine"><button class="cell mine" data-exchange="${esc(s.id)}" aria-label="Đổi ca ${s.ca} ngày ${dmOf(s.date)}">✔</button></td>`;
     const why = reason(s, cnts);
     return why ? `<td class="na" title="${esc(why)}"><span class="cell na">–</span></td>` : `<td><button class="cell free" data-reg="${esc(s.id)}" aria-label="Đăng ký ca ${s.ca} ngày ${dmOf(s.date)}">+</button></td>`;
   }).join("");
@@ -330,36 +330,69 @@ const posRows = (s) => {
 };
 
 async function register(s) {
-  const to = S.me.to, email = S.me.email, ci = caInfo(s.ca);
+  const ci = caInfo(s.ca), total = totalNeed(s), taken = totalTaken(S.regsBy[s.dotId], s.id);
   if (!(await ask({ title: "Xác nhận đăng ký", text: "Bạn có chắc chắn muốn đăng ký ca thi sau không?", ok: "Đăng ký", cancel: "Huỷ", ic: "calendarCheck", warn: warnText(s),
-    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · bắt đầu ${ci.start}`], ["Có mặt tại HĐ thi", ci.arrive], ["Khoá - Ngành", `Khoá ${s.khoa} · ${s.nganh} · Tổ ${TO_SHORT[to]}`], ["Môn", s.mon || ""], ...posRows(s)] }))) return;
-  const regId = `${s.date}_${s.ca}__${email}`, need = needOf(s, to);
-  const used = new Set((S.regsBy[s.dotId] || []).filter((r) => r.slotId === s.id && r.to === to).map((r) => r.k));
-  const order = Array.from({ length: need }, (_, i) => i + 1).sort((a, b) => used.has(a) - used.has(b));   // chỗ trống trước
-  for (const k of order) {
-    const claimId = `${s.id}_t${to}_${k}`;
-    const b = writeBatch(db);
-    b.set(doc(db, "claims", claimId), { slotId: s.id, dotId: s.dotId, to, k, email, regId, namHoc: s.namHoc });
-    b.set(doc(db, "regs", regId), { slotId: s.id, dotId: s.dotId, namHoc: s.namHoc, date: s.date, ca: s.ca, email, name: S.me.name, to, k, claimId, createdAt: serverTimestamp() });
-    try { await b.commit(); toast("Đã đăng ký ca thi."); return; }
-    catch (e) { if (e.code !== "permission-denied") { toast("Lỗi mạng, thử lại: " + (e.code || e.message)); return; } }
-  }
-  toast("Không đăng ký được: ca vừa đủ người, đã đóng đăng ký, hoặc bạn đã có ca cùng giờ.");
+    rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · bắt đầu ${ci.start}`], ["Có mặt tại HĐ thi", ci.arrive], ["Khoá - Ngành", `Khoá ${s.khoa} · ${s.nganh}`], ["Môn", s.mon || ""], ["Số người", `${taken}/${total} · ưu tiên chỗ của tổ ${TO_SHORT[S.me.to]}`], ...posRows(s)] }))) return;
+  const result = await shiftRequest({ mode: "register", slotId: s.id });
+  if (result.ok) toast(result.bucket === S.me.to ? "Đã đăng ký ca thi vào chỉ tiêu tổ của bạn." : `Đã đăng ký gác chéo, bổ sung chỉ tiêu tổ ${TO_SHORT[result.bucket]}.`);
+  else toast(shiftMessage(result.error));
 }
 
 async function cancel(s) {
   const ci = caInfo(s.ca);
-  if (!(await ask({ title: "Huỷ đăng ký ca này?", ok: "Huỷ ca này", cancel: "Giữ lại", danger: true, ic: "history",
+  const hours = hoursToStart(s);
+  if (hours < 48) { toast("Không thể huỷ trong vòng 48 giờ trước ca thi. Hãy chọn người thay thế để đổi ca."); return; }
+  if (!(await ask({ title: "Huỷ đăng ký ca này?", text: "Ca sẽ được bỏ khỏi lịch của bạn và tổ trưởng sẽ nhận email để kiểm tra số người.", ok: "Huỷ ca này", cancel: "Giữ lại", danger: true, ic: "history",
     rows: [["Ngày", fmtLong(s.date)], ["Ca", `Ca ${s.ca} · ${ci.start}`], ["Khoá - Ngành", `Khoá ${s.khoa} · ${s.nganh}`]] }))) return;
   const r = S.myYear.find((x) => x.slotId === s.id);
   if (!r) return;
+  const result = await shiftRequest({ mode: "cancel", slotId: s.id });
+  if (result.ok) toast(result.mailSent === false ? "Đã huỷ ca, nhưng chưa gửi được email cho tổ trưởng." : "Đã huỷ ca; tổ trưởng đã được gửi email.");
+  else toast(shiftMessage(result.error));
+}
+
+function hoursToStart(s) {
+  return (new Date(`${s.date}T${caInfo(s.ca).start}:00+07:00`).getTime() - Date.now()) / 3600000;
+}
+function shiftActions(s) {
+  const canCancel = hoursToStart(s) >= 48;
+  return `<div class="shift-actions"><button class="primary sm" data-exchange="${esc(s.id)}">Đổi</button><button class="danger sm" data-cancel="${esc(s.id)}" ${canCancel ? "" : 'disabled title="Không thể huỷ trong vòng 48 giờ trước ca thi"'}>Huỷ</button></div>`;
+}
+function shiftMessage(error) {
+  return ({ auth: "Phiên đăng nhập hết hạn, hãy đăng nhập lại.", closed: "Đợt thi đã đóng đăng ký.", overlap: "Bạn đã có ca khác cùng ngày và cùng giờ.", full: "Ca vừa đủ người.", replacement: "Không tìm thấy giảng viên thay thế.", replacement_overlap: "Giảng viên thay thế đã có ca cùng giờ.", registration: "Không tìm thấy đăng ký của bạn." })[error] || error || "Không thực hiện được thao tác.";
+}
+async function shiftRequest(payload) {
+  if (!scriptUrl) return { ok: false, error: "Chưa cấu hình Apps Script." };
   try {
-    const b = writeBatch(db);
-    b.delete(doc(db, "regs", r.id));
-    b.delete(doc(db, "claims", r.claimId));
-    await b.commit();
-    toast("Đã huỷ đăng ký.");
-  } catch (e) { toast("Không huỷ được (có thể đã hết hạn đăng ký)."); }
+    const idToken = await auth.currentUser.getIdToken(true);
+    const res = await fetch(scriptUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "shift", idToken, ...payload }) });
+    return await res.json();
+  } catch { return { ok: false, error: "Lỗi mạng, vui lòng thử lại." }; }
+}
+function replacementPicker(s) {
+  const current = S.myYear.find((r) => r.slotId === s.id), preferredTo = Number(current?.to || S.me.to);
+  const busy = new Set(Object.values(S.regsBy).flat().filter((r) => r.date === s.date && Number(r.ca) === Number(s.ca) && r.email !== S.me.email).map((r) => r.email));
+  const choices = S.roster.filter((t) => t.email !== S.me.email && !busy.has(t.email)).sort((a, b) => (Number(b.to) === preferredTo) - (Number(a.to) === preferredTo) || String(a.name).localeCompare(String(b.name), "vi"));
+  if (!choices.length) { toast(hoursToStart(s) >= 48 ? "Chưa có người thay phù hợp. Bạn có thể huỷ ca nếu còn ít nhất 48 giờ." : "Chưa có người thay phù hợp; ca này không thể huỷ trong vòng 48 giờ cuối."); return; }
+  return new Promise((resolve) => {
+    const bg = document.createElement("div"); bg.className = "aw-od-bg";
+    bg.innerHTML = `<div class="aw-od" role="dialog" aria-modal="true" aria-labelledby="replaceTitle"><div class="aw-od-ic">${icon("users")}</div><h2 id="replaceTitle">Chọn giảng viên thay thế</h2><p class="aw-od-sub">Chọn người nhận ca ${s.ca} · ${fmtLong(s.date)}. Ưu tiên giảng viên thuộc tổ phụ trách ca.</p><label for="replacementSelect">Giảng viên thay thế</label><select class="sel field" id="replacementSelect"><option value="">Chọn tên giảng viên</option>${choices.map((t) => `<option value="${esc(t.email)}">${esc(t.name)} · ${esc(TO_SHORT[t.to] || "")}</option>`).join("")}</select><div class="aw-od-foot"><button type="button" id="replaceCancel">Để sau</button><button type="button" id="replaceOk" class="primary" disabled>Đổi ca</button></div></div>`;
+    document.body.appendChild(bg);
+    const select = bg.querySelector("#replacementSelect"), ok = bg.querySelector("#replaceOk");
+    select.onchange = () => { ok.disabled = !select.value; };
+    const done = (v) => { bg.remove(); resolve(v); };
+    bg.querySelector("#replaceCancel").onclick = () => done("");
+    ok.onclick = () => done(select.value);
+    bg.onclick = (e) => { if (e.target === bg) done(""); };
+    select.focus();
+  });
+}
+async function exchange(s) {
+  const replacementEmail = await replacementPicker(s);
+  if (!replacementEmail) { toast(hoursToStart(s) >= 48 ? "Bạn có thể chọn Huỷ ca nếu không có người thay." : "Không thể huỷ trong vòng 48 giờ trước ca thi."); return; }
+  const result = await shiftRequest({ mode: "exchange", slotId: s.id, replacementEmail });
+  if (result.ok) toast(result.mailSent === false ? "Đã đổi ca, nhưng chưa gửi được email cho tổ trưởng." : "Đã đổi ca; tổ trưởng đã được gửi email.");
+  else toast(shiftMessage(result.error));
 }
 
 /** Sau khi vẽ lại: cuộn bảng "Lịch gác của bạn" tới dòng ca đang chọn. */
@@ -371,11 +404,11 @@ export function afterRender() {
 /** Cú bấm trong trang của giảng viên; trả true nếu đã xử lý. */
 export function meClick(e, { store }) {
   let el;
-  if ((el = e.target.closest("[data-reg],[data-cancel]"))) {
-    const s = findSlot(el.dataset.reg || el.dataset.cancel);
+  if ((el = e.target.closest("[data-reg],[data-cancel],[data-exchange]"))) {
+    const s = findSlot(el.dataset.reg || el.dataset.cancel || el.dataset.exchange);
     if (s) {
       if (S.pick !== s.id) { S.pick = s.id; S.render(); }      // bảng xem trước ở trên chuyển sang đúng ca đang đăng ký / huỷ
-      if (el.dataset.reg) register(s); else cancel(s);
+      if (el.dataset.reg) register(s); else if (el.dataset.exchange) exchange(s); else cancel(s);
     }
     return true;
   }

@@ -44,6 +44,7 @@ export const STATUS_LABEL = { SOAN: "Đang soạn lịch", MO: "Đang mở đăn
 // ---- Ca thi ----
 export const needOf = (s, t) => s.need?.["t" + t] || 0;
 export const totalNeed = (s) => needOf(s, 1) + needOf(s, 2) + needOf(s, 3);
+export const totalTaken = (regs, slotId) => (regs || []).filter((r) => r.slotId === slotId).length;
 export const slotId = (dot, iso, ca, khoa, nganh) => `${dot}-${iso.replace(/-/g, "")}-c${ca}-k${khoa}-${nganh}`;
 export const visibleSlots = (dotId) => (S.slotsBy[dotId] || []).filter((s) => totalNeed(s) > 0);
 export const findSlot = (id) => Object.values(S.slotsBy).flat().find((s) => s.id === id);
