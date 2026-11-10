@@ -12,6 +12,8 @@ const SH = { CFG: 'CauHinh', GV: 'GiaoVien', DOT: 'Dot', LOG: 'NhatKyNhac' };
 const TAB = { REG: 'DangKy_', OUT: 'XuatMau_' };
 const TO_LABEL = { 1: 'Chuyên 1', 2: 'Chuyên 2', 3: 'Cơ bản' }; // 1 = tổ SPA, 2 = tổ NNA, 3 = tổ Cơ bản
 const NGANH = ['SPA', 'NNA'];
+const LOG_SYNC = 'NhatKyDongBo';
+const AUTO_DELAY_MS = 60 * 1000;   // gom các lần sửa liên tiếp: đồng bộ sau 1 phút kể từ lần sửa đầu
 const TZ = 'Asia/Ho_Chi_Minh';
 // [giờ bắt đầu, giờ CBCT có mặt tại HĐ thi] – sửa trong tab CauHinh, đây chỉ là mặc định
 const CA_DEFAULT = { 1: ['07:30', '07:15'], 2: ['09:00', '08:45'], 3: ['13:30', '13:15'], 4: ['15:00', '14:45'] };
@@ -28,6 +30,8 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('Gác thi')
     .addItem('0. Tạo đợt thi mới…', 'menuNewDot')
     .addItem('1. Đồng bộ lên Firebase (GV, vai trò, đợt thi)', 'menuSyncUp')
+    .addItem('   Bật tự động đồng bộ (sửa sheet là Firebase tự cập nhật)', 'installAutoSync')
+    .addItem('   Tắt tự động đồng bộ', 'removeAutoSync')
     .addSeparator()
     .addItem('2. Kéo đăng ký về Sheet + Xuất MẪU nộp', 'menuExport')
     .addItem('3. Lưu file .xlsx vào Drive', 'menuXlsx')
@@ -241,6 +245,65 @@ function menuAccounts() {
   SpreadsheetApp.getUi().alert(`Tài khoản: tạo mới ${r.created}, đã có ${r.existing}` + (r.failed.length ? `\n\nLỗi:\n${r.failed.slice(0, 10).join('\n')}` : ''));
 }
 
+// ---------------------------------------------------------------- Tự động đồng bộ khi sửa sheet
+/**
+ * Bật một lần: tạo trigger "khi sửa" và "khi đổi cấu trúc" (chèn/xoá dòng). Sửa tab GiaoVien, Dot hoặc CauHinh thì sau khoảng 1 phút
+ * script tự chạy đồng bộ (thêm GV mới là tự tạo tài khoản, đổi vai trò, đổi hạn chót đợt, xoá GV là gỡ quyền).
+ * Dùng trigger "cài đặt" (không phải onEdit đơn giản) vì chỉ loại này mới được gọi Firebase.
+ */
+function installAutoSync() {
+  const ss = SpreadsheetApp.getActive();
+  removeAutoSync(true);
+  ScriptApp.newTrigger('onSheetEdit').forSpreadsheet(ss).onEdit().create();
+  ScriptApp.newTrigger('onSheetChange').forSpreadsheet(ss).onChange().create();
+  logSync('BẬT', 'Đã bật tự động đồng bộ khi sửa GiaoVien / Dot / CauHinh.');
+  scheduleAutoSync();                                       // đồng bộ luôn dữ liệu hiện có
+  ss.toast('Đã bật. Sửa GiaoVien / Dot / CauHinh thì khoảng 1 phút sau Firebase tự cập nhật. Xem tab NhatKyDongBo.', 'Gác thi', 10);
+}
+function removeAutoSync(quiet) {
+  ScriptApp.getProjectTriggers().filter((t) => ['onSheetEdit', 'onSheetChange', 'autoSyncRun'].indexOf(t.getHandlerFunction()) >= 0).forEach((t) => ScriptApp.deleteTrigger(t));
+  if (quiet !== true) { logSync('TẮT', 'Đã tắt tự động đồng bộ.'); SpreadsheetApp.getActive().toast('Đã tắt tự động đồng bộ.', 'Gác thi', 5); }
+}
+function onSheetEdit(e) {
+  try {
+    const name = e && e.range && e.range.getSheet().getName();
+    if ([SH.GV, SH.DOT, SH.CFG].indexOf(name) >= 0) scheduleAutoSync();
+  } catch (err) { /* không để lỗi làm hỏng thao tác sửa của người dùng */ }
+}
+function onSheetChange(e) {
+  try { if (e && e.changeType && ['EDIT', 'FORMAT'].indexOf(e.changeType) < 0) scheduleAutoSync(); } catch (err) { /* như trên */ }
+}
+/** Hẹn đồng bộ sau AUTO_DELAY_MS; nếu đã có lịch hẹn thì thôi (nhiều lần sửa gộp thành một lần chạy). */
+function scheduleAutoSync() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    if (!ScriptApp.getProjectTriggers().some((t) => t.getHandlerFunction() === 'autoSyncRun')) ScriptApp.newTrigger('autoSyncRun').timeBased().after(AUTO_DELAY_MS).create();
+  } finally { lock.releaseLock(); }
+}
+function autoSyncRun() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) return;
+  try {
+    ScriptApp.getProjectTriggers().filter((t) => t.getHandlerFunction() === 'autoSyncRun').forEach((t) => ScriptApp.deleteTrigger(t));
+    try {
+      const r = syncUp({ skipInvalid: true }), a = r.acct;
+      logSync(a.failed.length || r.skipped.length ? 'CẦN XEM' : 'OK',
+        `${r.dots} đợt, ${r.teachers} GV · tài khoản mới ${a.created}` + (r.removed.length ? ` · gỡ ${r.removed.length} GV (${r.removed.join(', ')})` : '') +
+        (r.skipped.length ? ` · BỎ QUA dòng chưa đủ email/tên/tổ: ${r.skipped.join(', ')}` : '') + (a.failed.length ? ` · LỖI tài khoản: ${a.failed.slice(0, 3).join('; ')}` : ''));
+    } catch (e) { logSync('LỖI', String(e.message || e)); }
+  } finally { lock.releaseLock(); }
+}
+/** Ghi nhật ký vào tab NhatKyDongBo (mới nhất ở trên) để biết lần đồng bộ nào thành công, lỗi gì. */
+function logSync(status, detail) {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(LOG_SYNC);
+  if (!sh) { sh = ss.insertSheet(LOG_SYNC); sh.getRange(1, 1, 1, 3).setValues([['Thời gian', 'Kết quả', 'Chi tiết']]).setFontWeight('bold'); sh.setFrozenRows(1); sh.setColumnWidths(1, 1, 150); sh.setColumnWidths(2, 1, 90); sh.setColumnWidths(3, 1, 700); }
+  sh.insertRowAfter(1);
+  sh.getRange(2, 1, 1, 3).setValues([[Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm:ss'), status, detail]]);
+  if (sh.getLastRow() > 301) sh.deleteRows(302, sh.getLastRow() - 301);
+}
+
 /** Hỏi một email rồi báo: có trong GiaoVien chưa, đã có tài khoản Firebase chưa, đã có hồ sơ trên Firestore chưa, vai trò gì. */
 function menuCheckLogin() {
   const ui = SpreadsheetApp.getUi();
@@ -269,15 +332,22 @@ function menuCheckLogin() {
 
 // ---------------------------------------------------------------- Đồng bộ lên
 /** Đẩy GV + vai trò, các đợt thi và cấu hình lên Firestore. KHÔNG đụng tới ca thi và đăng ký (do web quản lý). */
-function syncUp() {
+/**
+ * opts.skipInvalid: dòng GV chưa đủ thông tin thì bỏ qua (dùng khi tự động đồng bộ lúc đang gõ dở) thay vì báo lỗi cả đợt.
+ * GV có trong Firestore mà không còn trong sheet sẽ bị gỡ khỏi `teachers` và `roster` (mất quyền vào web; lịch sử đăng ký giữ nguyên).
+ */
+function syncUp(opts) {
+  opts = opts || {};
   const cfg = getCfg();
   const dots = readDots();
   if (!dots.length) throw new Error('Chưa có đợt thi nào. Chạy "0. Tạo đợt thi mới" trước.');
   const badD = dots.filter((d) => !/^[A-Za-z0-9-]{2,30}$/.test(d.ma));
   if (badD.length) throw new Error('Mã đợt sai: ' + badD.map((d) => d.ma).join(', '));
-  const teachers = readTeachers();
-  const badT = teachers.filter((t) => !/^[^@\s]+@[^@\s]+$/.test(t.email) || ![1, 2, 3].includes(t.to) || !t.name);
-  if (badT.length) throw new Error('GV thiếu tên / sai email / sai tổ: ' + badT.map((t) => t.email || t.name).join(', '));
+  const all = readTeachers();
+  const okRow = (t) => /^[^@\s]+@[^@\s]+$/.test(t.email) && [1, 2, 3].includes(t.to) && !!t.name;
+  const badT = all.filter((t) => !okRow(t));
+  if (badT.length && !opts.skipInvalid) throw new Error('GV thiếu tên / sai email / sai tổ: ' + badT.map((t) => t.email || t.name).join(', '));
+  const teachers = all.filter(okRow);
 
   const writes = [];
   const far = new Date(Date.now() + 365 * 86400000);
@@ -297,11 +367,20 @@ function syncUp() {
   try { acct = ensureAccounts(teachers); } catch (e) { acct = { created: 0, existing: 0, failed: [String(e.message || e)], createdEmails: [] }; }
   // Tài khoản vừa tạo dùng mật khẩu mặc định → đánh dấu để web nhắc GV đổi mật khẩu
   if (acct.createdEmails.length) fsCommit(acct.createdEmails.map((e) => ({ path: 'teachers/' + e, data: { pwTemp: true } })));
-  return { dots: dots.length, teachers: teachers.length, acct };
+
+  // Gỡ GV đã bị xoá khỏi sheet (chỉ khi sheet còn GV hợp lệ, để lỡ xoá nhầm cả bảng không làm mất quyền của mọi người)
+  let removed = [];
+  if (teachers.length) {
+    const keep = new Set(all.map((t) => t.email));                       // dòng đang gõ dở vẫn được giữ
+    removed = fsList('teachers').map((d) => d._id).filter((id) => !keep.has(id));
+    if (removed.length) fsDelete(removed.flatMap((e) => ['teachers/' + e, 'roster/' + e]));
+  }
+  return { dots: dots.length, teachers: teachers.length, acct, removed, skipped: badT.map((t) => t.email || t.name || '(dòng trống tên)') };
 }
 function menuSyncUp() {
   const r = syncUp(), a = r.acct;
   SpreadsheetApp.getUi().alert(`Đã đồng bộ ${r.dots} đợt thi và ${r.teachers} giảng viên lên Firebase.\nTài khoản đăng nhập: tạo mới ${a.created}, đã có ${a.existing}.` +
+    (r.removed.length ? `\nĐã gỡ ${r.removed.length} giảng viên không còn trong sheet: ${r.removed.join(', ')}.` : '') +
     (a.failed.length ? `\n\nLỖI tạo tài khoản (dữ liệu khác vẫn đã đồng bộ):\n${a.failed.slice(0, 8).join('\n')}` : ''));
 }
 
@@ -409,6 +488,10 @@ function fsCommit(writes) {
       writes: writes.slice(i, i + 400).map((w) => ({ update: { name: root + w.path, fields: fields(w.data) }, updateMask: { fieldPaths: Object.keys(w.data) } })),
     });
   }
+}
+function fsDelete(paths) {
+  const root = `projects/${getCfg().FIREBASE_PROJECT_ID}/databases/(default)/documents/`;
+  for (let i = 0; i < paths.length; i += 400) fsFetch(fsBase() + ':commit', 'post', { writes: paths.slice(i, i + 400).map((p) => ({ delete: root + p })) });
 }
 function fsList(col) {
   const out = []; let token = '';

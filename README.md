@@ -63,6 +63,14 @@ Repo *Settings → Pages → Deploy from a branch → `main` → `/docs` → Sav
 ### Bước 5 – Đồng bộ
 **Gác thi → 1. Đồng bộ lên Firebase.** Hộp thoại phải báo số đợt, số giảng viên và "Tài khoản đăng nhập: tạo mới N". Tài khoản mới có **mật khẩu mặc định** (hằng số `DEFAULT_PASSWORD` ở đầu `Code.gs`; muốn đổi mà không sửa code thì thêm Script Property `DEFAULT_PASSWORD`) và web mở sẵn trang Cài đặt để GV đổi. Mật khẩu này không hiện ở tab `CauHinh`, trên web hay trong README. Chạy lại bất cứ lúc nào (thêm GV, đổi vai trò, đổi hạn chót, đổi trạng thái đợt); ca thi và đăng ký không bị đụng tới.
 
+#### Tự động đồng bộ (khuyên bật)
+**Gác thi → Bật tự động đồng bộ** (làm một lần, cấp quyền khi được hỏi). Từ đó, **sửa tab `GiaoVien`, `Dot` hoặc `CauHinh`** (thêm/xoá/sửa dòng, đổi vai trò, đổi hạn chót hoặc trạng thái đợt) thì khoảng **1 phút sau** Firebase tự cập nhật; nhiều lần sửa liên tiếp được gộp thành một lần chạy.
+- Thêm GV mới: tự tạo tài khoản đăng nhập với mật khẩu mặc định.
+- **Xoá GV khỏi sheet: GV mất quyền vào web** (gỡ khỏi `teachers`/`roster`; lịch sử đăng ký giữ nguyên). Nếu sheet không còn GV hợp lệ nào thì script không xoá ai, để lỡ xoá nhầm cả bảng không làm mất quyền mọi người.
+- Dòng đang gõ dở (thiếu email/tên/tổ) được bỏ qua, các dòng đủ thông tin vẫn đồng bộ.
+- Kết quả từng lần nằm ở tab **`NhatKyDongBo`** (mới nhất ở trên: OK / CẦN XEM / LỖI kèm lý do). Tắt bằng **Gác thi → Tắt tự động đồng bộ**.
+- Ca thi và đăng ký không đi qua sheet (web ghi thẳng Firestore), nên không cần đồng bộ.
+
 ### Bước 6 – Chạy thử trọn vòng
 1. Mở web bằng cửa sổ ẩn danh, đăng nhập bằng email tổ trưởng (lần đầu dùng mật khẩu do Khoa cấp, web mở sẵn trang Cài đặt để đổi).
 2. **Quản lý → Thêm ca thi mới**: chọn đợt `SOAN`, nhập ngày, tick ca/khoá/ngành, số GV cần của tổ → *Xem trước* → *Thêm vào đợt*.
