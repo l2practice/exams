@@ -4,11 +4,11 @@
   Chữ cỡ lớn (nhiều giảng viên lớn tuổi, dùng trên điện thoại).
 ───────────────────────────────────────────────────*/
 :root{
-  --nv:#25225F; --nv-2:#2F2B78; --nv-3:#3A3591;
-  --p:#5A45DD; --p-hv:#4A36C9; --p-lt:#EEEBFF; --p-ring:rgba(90,69,221,.3);
-  --bg:#F4F5FB; --card:#FFFFFF; --line:#E6E8F4; --line-2:#EFF0F8; --soft:#F7F8FD;
-  --ink:#1F2347; --ink-2:#4C5278; --ink-3:#7A80A3;
-  --ok:#14966A; --ok-bg:#E3F6EC; --warn:#A8690A; --warn-bg:#FFF3D6; --bad:#D03B3B; --bad-bg:#FDE8E8; --info:#2F6FE0; --info-bg:#E5EFFF; --org:#E98A0C; --org-bg:#FFF0D9;
+  --nv:#191922; --nv-2:#282832; --nv-3:#34343F;
+  --p:#5140A5; --p-hv:#403184; --p-lt:#EEEAF8; --p-ring:rgba(81,64,165,.26);
+  --bg:#ECEBE8; --card:#FCFBF8; --line:#E4E2DE; --line-2:#EFEEEB; --soft:#F5F4F1;
+  --ink:#24232A; --ink-2:#595862; --ink-3:#6F6D76;
+  --ok:#27816B; --ok-bg:#E3F2EC; --warn:#A8690A; --warn-bg:#FFF2DA; --bad:#C9504C; --bad-bg:#FBE8E5; --info:#4B69A9; --info-bg:#E8EDF7; --org:#E87560; --org-bg:#FCEAE5;
   --font:'Be Vietnam Pro',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   --r:12px; --r-lg:16px; --shadow-sm:0 1px 3px rgba(31,35,71,.06); --shadow:0 6px 22px rgba(31,35,71,.07); --shadow-lg:0 18px 48px rgba(31,35,71,.2);
 }
@@ -78,11 +78,15 @@ textarea.field{resize:vertical}
 .seg button.on{background:var(--p);color:#fff;box-shadow:0 3px 10px rgba(90,69,221,.3)}
 .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px}
 .toolbar .grow{flex:1}
+.create-dot-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}
 .shift-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;justify-content:flex-end}
 
 /* ── số liệu ── */
 .kpis4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
-.kpi{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px 18px;box-shadow:var(--shadow-sm)}
+.kpi{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:20px;padding:16px 18px;box-shadow:var(--shadow-sm)}
+.kpis4 .kpi:first-child{background:#C75B49;border-color:#C75B49;color:#fff}
+.kpis4 .kpi:first-child .kl{color:rgba(255,255,255,.82)}
+.kpis4 .kpi:first-child .kicon{background:rgba(255,255,255,.2);color:#fff}
 .kicon{width:50px;height:50px;border-radius:14px;display:grid;place-items:center;flex:0 0 auto}
 .kicon svg{width:26px;height:26px}
 .kicon.violet{background:var(--p-lt);color:var(--p)} .kicon.green{background:var(--ok-bg);color:var(--ok)} .kicon.blue{background:var(--info-bg);color:var(--info)} .kicon.orange{background:var(--org-bg);color:var(--org)}
@@ -225,17 +229,17 @@ table.scan input[type=checkbox]{width:20px;height:20px;accent-color:var(--p)}
 /*───────────────────────────────────────────────────
   Khung ứng dụng: thanh bên xanh đêm + nội dung
 ───────────────────────────────────────────────────*/
-.brand-mark{position:relative;width:40px;height:40px;border-radius:50%;background:#fff;color:var(--nv);display:grid;place-items:center;flex:0 0 auto;overflow:hidden;font-weight:800;font-size:.72rem}
+.brand-mark{position:relative;width:40px;height:40px;border-radius:13px;background:#fff;color:var(--nv);display:grid;place-items:center;flex:0 0 auto;overflow:hidden;font-weight:800;font-size:.72rem}
 .brand-mark img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff;padding:1px}
 .brand-mark.has i{visibility:hidden}
 .brand-mark.big{width:58px;height:58px;font-size:1rem}
 .shell{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100vh}
-.side{background:var(--nv);color:#D9D7F7;padding:18px 14px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.side{background:var(--nv);color:#E4E3EA;padding:18px 14px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh;overflow-y:auto}
 .brand{display:flex;align-items:center;gap:12px;padding:4px 8px 18px;color:#fff;font-size:1.05rem}
 .side nav{display:flex;flex-direction:column;gap:3px}
-.nav-item{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:9px 14px;border-radius:10px;background:transparent;color:#CFCDF3;font-weight:500;font-size:.95rem;justify-content:flex-start;text-align:left}
+.nav-item{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:9px 14px;border-radius:12px;background:transparent;color:#C8C7D0;font-weight:500;font-size:.95rem;justify-content:flex-start;text-align:left}
 .nav-item:hover{background:var(--nv-2);color:#fff}
-.nav-item.active{background:var(--p);color:#fff;font-weight:600}
+.nav-item.active{background:#E8E6E0;color:#25242A;font-weight:600}
 .nav-item svg{width:21px;height:21px;flex:0 0 auto}
 .nav-group{display:flex;align-items:center;gap:12px;padding:12px 14px 4px;margin-top:6px;color:#fff;font-weight:600;font-size:.95rem}
 .nav-group svg{width:21px;height:21px}
@@ -244,16 +248,22 @@ table.scan input[type=checkbox]{width:20px;height:20px;accent-color:var(--p)}
 .nav-sub::before{content:'+';opacity:.7;margin-left:-16px;margin-right:2px;font-weight:700}
 .m-only{display:none}
 .main{display:flex;flex-direction:column;min-width:0}
-.topbar{display:flex;align-items:center;gap:16px;padding:16px 28px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50}
+.topbar{display:flex;align-items:center;gap:16px;padding:16px 28px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50}
 .topbar h1{font-size:1.35rem;font-weight:700}
 .topsub{font-size:.85rem;color:var(--ink-3)}
+.topsub:has(.year-badge){display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.year-badge{display:inline-flex;align-items:center;border-radius:999px;background:#FCEAE5;color:#B84F40;padding:4px 11px;font-size:.76rem;font-weight:700;white-space:nowrap}
+.year-end{margin:22px 0 0;padding:16px;background:var(--warn-bg);border-color:#f1dfb5;box-shadow:none}
+.year-end h2{margin-bottom:6px}
+.year-end-current{margin:10px 0;font-size:.9rem}
+.year-end .okmsg,.year-end .err{overflow-wrap:anywhere}
 .topbar-right{margin-left:auto;position:relative}
 .user{display:flex;align-items:center;gap:10px;background:transparent;padding:4px 8px;border-radius:999px;min-height:46px;color:var(--ink)}
 .user:hover{background:var(--soft);color:var(--ink)}
 .avatar{width:38px;height:38px;border-radius:50%;background:var(--p);color:#fff;display:grid;place-items:center;font-weight:700;font-size:.82rem;flex:0 0 auto}
 .uname{font-weight:600;font-size:.9rem}
 .uchev svg{width:16px;height:16px;color:var(--ink-3)}
-.umenu{position:absolute;right:0;top:calc(100% + 8px);background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-lg);padding:8px;min-width:230px;display:flex;flex-direction:column;gap:4px;z-index:60}
+.umenu{position:absolute;right:0;top:calc(100% + 8px);background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-lg);padding:8px;min-width:230px;display:flex;flex-direction:column;gap:4px;z-index:60}
 .umenu button{justify-content:flex-start;width:100%;background:transparent}
 .umenu button:hover{background:var(--p-lt)}
 .umenu button.danger{color:var(--bad)}
@@ -288,6 +298,7 @@ table.scan input[type=checkbox]{width:20px;height:20px;accent-color:var(--p)}
   table.sheet th.name{min-width:108px;max-width:108px;font-size:.78rem;padding:3px 6px}
   table.sheet th,table.sheet td{min-width:60px}
   .tbl-wrap{max-height:70vh}
+  .create-dot-row{grid-template-columns:1fr}
 }
 
 /* ── hộp thoại xác nhận ── */
