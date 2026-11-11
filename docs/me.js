@@ -156,7 +156,7 @@ export function registerHtml() {
   }
   const all = dots.flatMap((d) => visibleSlots(d.id));
   const khoas = [...new Set(all.map((s) => s.khoa))].sort((a, b) => a - b);
-  const nganhLabel = new Map(all.map((s) => [s.nganh, isOther(s) ? `Khoa khác: ${s.donVi}` : s.nganh]));
+  const nganhLabel = new Map(all.map((s) => [s.nganh, isOther(s) ? s.donVi : s.nganh]));
   const nganhs = [...nganhLabel.keys()].sort();
   const cnts = allCounts(), mine = myIds();
   const shownDots = dots.filter((d) => S.fDot === "all" || d.id === S.fDot);

@@ -171,7 +171,7 @@ function dateLongVN(iso) {
   const [y, m, d] = iso.split('-').map(Number);
   return `${DOW_SHORT[new Date(y, m - 1, d).getDay()]} ngày ${d}/${m}/${y}`;
 }
-const slotWho = (s) => (String(s.nganh || '').indexOf('KHAC') === 0 ? 'K' + s.khoa + ' · Khoa khác: ' + (s.donVi || '') : 'K' + s.khoa + ' · ' + s.nganh);
+const slotWho = (s) => (String(s.nganh || '').indexOf('KHAC') === 0 ? 'K' + s.khoa + ' · ' + (s.donVi || '') : 'K' + s.khoa + ' · ' + s.nganh);
 const slotId = (ma, iso, ca, khoa, nganh) => `${ma}-${iso.replace(/-/g, '')}-c${ca}-k${khoa}-${nganh}`;
 const startDate = (cfg, iso, ca) => new Date(`${iso}T${cfg.ca[ca].start}:00+07:00`);
 const arriveDate = (cfg, iso, ca) => new Date(`${iso}T${cfg.ca[ca].arrive}:00+07:00`);
