@@ -60,8 +60,8 @@ export function overviewHtml() {
     <div class="kpis4">${kpi("violet", "calendar", min, "Tổng số ca (định mức)")}${kpi("green", "checkCircle", done, "Đã gác")}${kpi("blue", "calendarCheck", upcoming.length, "Sắp tới")}${kpi("orange", "hourglass", short, "Còn thiếu")}</div>
     <div class="dash">
       <div class="card ringcard">
-        <div class="ring"><svg viewBox="0 0 132 132"><circle cx="66" cy="66" r="54" fill="none" stroke="#EEEBFF" stroke-width="12"/>
-          <circle cx="66" cy="66" r="54" fill="none" stroke="${done >= min ? "#14966A" : "#5A45DD"}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - pct / 100)).toFixed(1)}"/></svg>
+        <div class="ring"><svg viewBox="0 0 132 132"><circle cx="66" cy="66" r="54" fill="none" style="stroke:var(--p-lt)" stroke-width="12"/>
+          <circle cx="66" cy="66" r="54" fill="none" style="stroke:${done >= min ? "var(--ok)" : "var(--p)"}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - pct / 100)).toFixed(1)}"/></svg>
           <div class="t"><div><b>${done}/${min}</b><span>ca</span></div></div></div>
         <div><h2>Tiến độ gác thi</h2><p class="small" style="margin:4px 0">Đã hoàn thành ${pct}%</p>
           <p style="margin:6px 0 0">${short ? `Còn thiếu <b>${short}</b> ca để đủ định mức.` : "Đã đủ định mức, cảm ơn thầy/cô."}</p>

@@ -81,7 +81,7 @@ export function statsHtml() {
     ${S.openGv === p.email ? detailHtml(p, cols + 1) : ""}`).join("");
   const kpi = (cls, ic, v, l) => `<div class="kpi"><span class="kicon ${cls}">${icon(ic)}</span><div><div class="kv">${v}</div><div class="kl">${l}</div></div></div>`;
   return `<div class="kpis4">${kpi("violet", "users", all.length, "Giảng viên")}${kpi("green", "checkCircle", nOk, `Đủ ${min} ca`)}${kpi("orange", "hourglass", nShort, "Chưa đủ")}${kpi("blue", "calendarCheck", sumDone, "Tổng số ca đã gác")}</div>
-    <div class="toolbar"><span class="pill p">Năm học ${esc(S.cfg.namHoc || "")}</span><span class="pill">${esc(scopeLabel())}</span><span class="grow"></span>
+    <div class="toolbar"><span class="grow"></span>
       <select class="sel" data-sel="gvf" aria-label="Trạng thái">${[["all", "Tất cả trạng thái"], ["short", "Chưa đủ"], ["ok", "Đã đủ"]].map(([v, l]) => `<option value="${v}" ${S.gvFilter === v ? "selected" : ""}>${l}</option>`).join("")}</select>
       <button class="primary nowrap" id="btnCsv">${icon("list")} Tải CSV</button></div>
     <p class="small">Bấm vào tên giảng viên để xem chi tiết từng ca (ngày, giờ, khoá, ngành, môn).</p>
