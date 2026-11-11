@@ -17,6 +17,23 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* bỏ qua */ } },
   del: (k) => { try { localStorage.removeItem(k); } catch { /* bỏ qua */ } },
 };
+// ---- Phiên làm việc tối đa 90 phút kể từ lúc đăng nhập: hết giờ thì xoá bộ nhớ đệm và bắt đăng nhập lại
+const SESSION_MS = 90 * 60 * 1000, LOGIN_AT = "gacthi.loginAt", KEEP = new Set([EMAIL_KEY]);
+const loginAge = () => Date.now() - Number(store.get(LOGIN_AT) || 0);
+async function wipeLocal() {
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith("gacthi.") && !KEEP.has(k)) localStorage.removeItem(k); } catch { /* bỏ qua */ }
+  try { sessionStorage.clear(); } catch { /* bỏ qua */ }
+  try { if (window.caches) for (const k of await caches.keys()) await caches.delete(k); } catch { /* bỏ qua */ }
+}
+async function expireSession(msg) {
+  await wipeLocal();
+  try { await signOut(auth); } catch { /* bỏ qua */ }
+  if (msg) { $("loginErr").textContent = msg; }
+}
+const EXPIRED_MSG = "Phiên làm việc đã hết (90 phút). Hãy đăng nhập lại.";
+setInterval(() => { if (auth.currentUser && loginAge() > SESSION_MS) expireSession(EXPIRED_MSG); }, 30000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && auth.currentUser && loginAge() > SESSION_MS) expireSession(EXPIRED_MSG); });
+
 const authMsg = (code) => ({
   "auth/invalid-credential": "Email hoặc mật khẩu chưa đúng.",
   "auth/wrong-password": "Email hoặc mật khẩu chưa đúng.",
@@ -47,10 +64,11 @@ $("loginForm").onsubmit = async (e) => {
   const email = $("email").value.trim().toLowerCase(), pw = $("pw").value;
   $("loginErr").textContent = ""; $("loginInfo").textContent = "";
   try {
+    store.set(LOGIN_AT, String(Date.now()));
     await signInWithEmailAndPassword(auth, email, pw);
     if ($("remember").checked) store.set(EMAIL_KEY, email); else store.del(EMAIL_KEY);
     $("pw").value = "";
-  } catch (err) { $("loginErr").textContent = authMsg(err.code); }
+  } catch (err) { store.del(LOGIN_AT); $("loginErr").textContent = authMsg(err.code); }
 };
 
 /** Quên mật khẩu: Apps Script đặt mật khẩu mới rồi gửi mail từ tài khoản của khoa (không lộ email nào có trong danh sách). */
@@ -70,7 +88,7 @@ $("btnForgot").onclick = async () => {
   finally { $("btnForgot").disabled = false; }
 };
 
-$("btnOut").onclick = $("btnOut2").onclick = $("btnOutSet").onclick = () => { $("userMenu").hidden = true; signOut(auth); };
+$("btnOut").onclick = $("btnOut2").onclick = $("btnOutSet").onclick = () => { $("userMenu").hidden = true; expireSession(); };
 
 // =====================================================================  Điều hướng
 const ROUTES = {
@@ -187,6 +205,7 @@ onAuthStateChanged(auth, async (u) => {
   Object.values(S.unsubDots).forEach((f) => f()); S.unsubDots = {};
   Object.assign(S, { teachersLoaded: false, dotsLoaded: false, user: u, me: null, dots: [], slotsBy: {}, regsBy: {}, roster: [], myYear: [], teachersAll: [], openGv: null, pick: null });
   if (!u) return show("login");
+  if (loginAge() > SESSION_MS) { await expireSession(EXPIRED_MSG); return; }   // phiên cũ (hoặc chưa có mốc đăng nhập) => bắt đăng nhập lại
   show("loading");
   const email = u.email.toLowerCase();
   const t = await getDoc(doc(db, "teachers", email));

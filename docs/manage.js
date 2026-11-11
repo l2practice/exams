@@ -139,7 +139,7 @@ export function addHtml() {
       <label>Ngành</label>
       <div class="row">${NGANH.map((n) => `<label class="check"><input type="checkbox" name="addNganh" value="${n}"> ${n}</label>`).join("")}<button type="button" class="chip-add" id="btnAddOther">+ Add others</button></div>
       <div id="otherBox" hidden>
-        <label for="addDonVi">Tên khoa khác <span class="small">(đi gác thi cho khoa khác; khi điền tên, hệ thống bỏ qua Khoá/Ngành đã chọn)</span></label>
+        <label for="addDonVi">Tên khoa khác <span class="small">(chỉ dùng khi đi gác cho khoa khác; ca này không gắn với Khoá/Ngành của khoa mình)</span></label>
         <input class="field" id="addDonVi" type="text" maxlength="60" placeholder="Ví dụ: Khoa Kinh tế">
       </div>
       </div>
