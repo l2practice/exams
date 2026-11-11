@@ -433,3 +433,5 @@ table.wk tbody td{height:84px}
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.spin{animation:spin 2s linear infinite!important}}
 @media(max-width:860px){.toolbar .seg{display:flex;flex-wrap:wrap}.toolbar .seg button{flex:1 1 auto}}
+.aikey{padding:14px;border:1px dashed var(--p);border-radius:12px;background:var(--p-lt);margin-bottom:12px}
+.aikey p{margin:4px 0 10px}

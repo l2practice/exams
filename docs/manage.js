@@ -153,7 +153,13 @@ export function addHtml() {
     <div class="card scanbox" id="secScan" hidden>
       <h2><span class="ic-inline">${icon("sparkle")}</span> Quét lịch thi từ ảnh (AI)</h2>
       <p class="small">Chụp bảng lịch thi hoặc chọn ảnh có sẵn (kể cả ảnh chụp màn hình). AI điền sẵn ngày, ca, khoá, ngành, môn; <b>bạn kiểm tra và sửa</b> trước khi thêm. AI có thể đọc sai nên không có gì được lưu cho tới khi bạn bấm Thêm.</p>
-      <div class="scanpick">
+      <div id="aiKeyBox" class="aikey" ${aiKey() ? "hidden" : ""}>
+        <label for="aiKeyIn"><b>Khoá Gemini API của bạn</b></label>
+        <p class="small">Mỗi tổ trưởng dùng khoá riêng. Khoá chỉ lưu trên trình duyệt của máy này, không lưu lên hệ thống. Lấy khoá miễn phí tại <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.</p>
+        <div class="create-dot-row"><input class="field" id="aiKeyIn" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…"><button type="button" class="primary" id="btnAiKeySave">Lưu khoá</button></div>
+      </div>
+      <p id="aiKeyOk" class="small" ${aiKey() ? "" : "hidden"}>✔ Đã có khoá Gemini trên máy này. <button type="button" class="link" id="btnAiKeyDel">Xoá / đổi khoá</button></p>
+      <div class="scanpick" id="scanPick" ${aiKey() ? "" : "hidden"}>
         <label class="filebtn" for="scanCam">${icon("camera")} Chụp bằng camera</label>
         <span class="or">hoặc</span>
         <label class="filebtn" for="scanFile">${icon("image")} Chọn ảnh từ máy</label>
@@ -272,7 +278,10 @@ async function runAdd(dry) {
 }
 
 // ---------------------------------------------------------------------  Quét lịch thi từ ảnh (AI)
-let scanRows = [];                                           // các dòng AI đọc được; tổ trưởng sửa trực tiếp ở bản xem trước
+let scanRows = [];
+const AI_KEY = "gacthi.geminiKey";   // giữ lại khi hết phiên 90 phút (xem KEEP trong app.js)
+const aiKey = () => { try { return localStorage.getItem(AI_KEY) || ""; } catch { return ""; } };
+function showAiKey(has) { $("aiKeyBox").hidden = has; $("aiKeyOk").hidden = !has; $("scanPick").hidden = !has; if (!has) $("aiKeyIn").focus(); }                                           // các dòng AI đọc được; tổ trưởng sửa trực tiếp ở bản xem trước
 
 const isoOk = (v) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ""); return !!m && new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDate() === +m[3]; };
 const rowErr = (r) => ({ date: !isoOk(r.date), ca: ![1, 2, 3, 4].includes(Number(r.ca)), khoa: !khoaList().includes(Number(r.khoa)), nganh: !NGANH.includes(r.nganh) });
@@ -281,7 +290,8 @@ const rowOk = (r) => !Object.values(rowErr(r)).some(Boolean);
 const SCAN_ERR = {
   auth: "Phiên đăng nhập không hợp lệ, hãy đăng nhập lại.",
   forbidden: "Chỉ tổ trưởng mới dùng được chức năng này.",
-  no_key: "Chưa cài khoá Gemini. Quản trị viên dán GEMINI_API_KEY vào Apps Script → Project Settings → Script Properties.",
+  no_key: "Chưa có khoá Gemini. Hãy dán khoá API của bạn vào ô bên trên.",
+  bad_key: "Khoá Gemini không đúng hoặc đã bị khoá. Hãy kiểm tra và dán lại.",
   limit: "Hôm nay bạn đã quét quá nhiều lần. Hãy nhập tay hoặc thử lại vào ngày mai.",
   bad_image: "Ảnh không hợp lệ hoặc quá lớn.",
   gemini: "AI đang bận hoặc gặp lỗi. Thử lại sau ít phút.",
@@ -313,7 +323,7 @@ async function runScan(file) {
     $("scanMsg").textContent = "AI đang đọc lịch thi (có thể mất 10–30 giây)…";
     const idToken = await auth.currentUser.getIdToken();
     const res = await fetch(scriptUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "scan", idToken, image: b64, mime, namHoc: dot?.namHoc || S.cfg.namHoc }) });
+      body: JSON.stringify({ action: "scan", idToken, geminiKey: aiKey(), image: b64, mime, namHoc: dot?.namHoc || S.cfg.namHoc }) });
     const j = await res.json();
     if (!j.ok) throw new Error(j.error || "fail");
     scanRows = (j.rows || []).map((r) => ({ ...r, ca: r.ca || "", khoa: r.khoa || "", on: true }));
@@ -323,6 +333,7 @@ async function runScan(file) {
     renderScan();
   } catch (e) {
     $("scanMsg").textContent = "";
+    if (e.message === "no_key" || e.message === "bad_key") showAiKey(false);
     $("scanErr").textContent = SCAN_ERR[e.message] || "Không quét được lúc này. Kiểm tra mạng rồi thử lại, hoặc nhập tay.";
   }
 }
@@ -500,6 +511,13 @@ async function delRow(id) {
 
 /** Gọi từ app.js cho mọi cú bấm trong trang; trả true nếu là thao tác của tổ trưởng. */
 export function manageClick(e) {
+  if (e.target.closest("#btnAiKeySave")) {
+    const k = $("aiKeyIn").value.trim();
+    if (!/^[\w-]{20,200}$/.test(k)) { $("scanErr").textContent = "Khoá không hợp lệ. Hãy dán đúng khoá API (thường bắt đầu bằng AIza)."; return true; }
+    try { localStorage.setItem(AI_KEY, k); } catch { $("scanErr").textContent = "Trình duyệt không cho lưu khoá (chế độ ẩn danh?)."; return true; }
+    $("aiKeyIn").value = ""; $("scanErr").textContent = ""; showAiKey(true); toast("Đã lưu khoá trên máy này."); return true;
+  }
+  if (e.target.closest("#btnAiKeyDel")) { try { localStorage.removeItem(AI_KEY); } catch { /* bỏ qua */ } showAiKey(false); return true; }
   if (e.target.closest("#btnAddOther")) { const b = $("otherBox"); b.hidden = !b.hidden; if (!b.hidden) $("addDonVi").focus(); else $("addDonVi").value = ""; return true; }
   let el;
   if ((el = e.target.closest("[data-at]"))) {                      // chuyển tab Nhập tay / Quét AI (không vẽ lại trang để khỏi mất dữ liệu đang nhập)

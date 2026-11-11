@@ -18,7 +18,7 @@ const store = {
   del: (k) => { try { localStorage.removeItem(k); } catch { /* bỏ qua */ } },
 };
 // ---- Phiên làm việc tối đa 90 phút kể từ lúc đăng nhập: hết giờ thì xoá bộ nhớ đệm và bắt đăng nhập lại
-const SESSION_MS = 90 * 60 * 1000, LOGIN_AT = "gacthi.loginAt", KEEP = new Set([EMAIL_KEY]);
+const SESSION_MS = 90 * 60 * 1000, LOGIN_AT = "gacthi.loginAt", KEEP = new Set([EMAIL_KEY, "gacthi.geminiKey"]);
 const loginAge = () => Date.now() - Number(store.get(LOGIN_AT) || 0);
 async function wipeLocal() {
   try { for (const k of Object.keys(localStorage)) if (k.startsWith("gacthi.") && !KEEP.has(k)) localStorage.removeItem(k); } catch { /* bỏ qua */ }

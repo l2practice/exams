@@ -1022,7 +1022,9 @@ function scanSchedule(req) {
   if (!email) return { ok: false, error: 'auth' };
   const t = readTeachers().find((x) => x.email === email);
   if (!t || !(t.admin || t.leadTo)) return { ok: false, error: 'forbidden' };
-  const key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  const own = String(req.geminiKey || '').trim();                              // khoá riêng của tổ trưởng (lưu trên máy họ), chỉ dùng cho lần gọi này, không lưu
+  if (own.length > 200) return { ok: false, error: 'bad_key' };
+  const key = own || PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if (!key) return { ok: false, error: 'no_key' };
   const b64 = String(req.image || '');
   if (!b64 || b64.length > SCAN_MAX_B64 || !/^image\/(jpeg|png|webp)$/.test(String(req.mime))) return { ok: false, error: 'bad_image' };
@@ -1042,6 +1044,7 @@ function scanSchedule(req) {
   const res = UrlFetchApp.fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.geminiModel)}:generateContent`, {
     method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': key }, payload: JSON.stringify(body),
   });
+  if (own && [400, 401, 403].includes(res.getResponseCode()) && /API key|API_KEY|PERMISSION_DENIED/i.test(res.getContentText())) return { ok: false, error: 'bad_key' };
   if (res.getResponseCode() >= 300) return { ok: false, error: 'gemini', detail: res.getContentText().slice(0, 300) };
   try {
     const text = JSON.parse(res.getContentText()).candidates[0].content.parts.map((p) => p.text || '').join('');
