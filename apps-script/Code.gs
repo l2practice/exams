@@ -582,6 +582,7 @@ function fromFv(v) {
   if ('booleanValue' in v) return v.booleanValue;
   if ('timestampValue' in v) return v.timestampValue;
   if ('mapValue' in v) return fromFields(v.mapValue.fields || {});
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(fromFv);
   return null;
 }
 function fromFields(f) { const o = {}; Object.keys(f).forEach((k) => (o[k] = fromFv(f[k]))); return o; }

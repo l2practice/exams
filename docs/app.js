@@ -5,7 +5,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { doc, getDoc, updateDoc, collection, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { resetUrl } from "./firebase-config.js";
-import { auth, db, S, $, esc, toast, TO_LABEL, TO_SHORT, isManager, statusOf } from "./core.js";
+import { auth, db, S, $, esc, toast, TO_LABEL, TO_SHORT, isManager, statusOf, roleLabel } from "./core.js";
 import { IC, LOGO, icon } from "./icons.js";
 import { overviewHtml, mineHtml, registerHtml, meClick, meChange, afterRender } from "./me.js";
 import { statsHtml, addHtml, slotsHtml, refreshAddList, refreshAddPeriods, endYearFromSettings, manageClick, manageChange } from "./manage.js";
@@ -122,7 +122,6 @@ $("btnPwNow").onclick = () => go("settings");
 $("btnSetClose").onclick = () => go(isManager() ? "mg:stats" : "me:overview");
 
 const initials = (n) => String(n || "?").trim().split(/\s+/).slice(-2).map((w) => w[0] || "").join("").toUpperCase();
-const roleLabel = () => (S.me.admin ? "Quản trị toàn khoa" : S.me.leadTo ? `Tổ trưởng – Tổ ${TO_LABEL[S.me.leadTo]}` : `Giảng viên – Tổ ${TO_LABEL[S.me.to] || ""}`);
 const scopeText = () => (S.me.admin ? "Phạm vi: cả 3 tổ" : "Phạm vi: tổ mình");
 
 function navHtml() {
@@ -214,7 +213,11 @@ onAuthStateChanged(auth, async (u) => {
   S.me = { email, ...t.data() };
   S.cfg = c.exists() ? c.data() : { minCa: 20 };
 
-  S.unsub.push(onSnapshot(doc(db, "config", "main"), (d) => { S.cfg = d.data() || S.cfg; S.render(); }));
+  S.unsub.push(onSnapshot(doc(db, "config", "main"), (d) => {
+    const next = d.data() || S.cfg;
+    if (next.namHoc && S.cfg.namHoc && next.namHoc !== S.cfg.namHoc && !S.yearClosed) return location.reload();   // listener đợt/ca đang lọc theo năm cũ
+    S.cfg = next; S.render();
+  }));
   S.unsub.push(onSnapshot(collection(db, "roster"), (qs) => {         // tên + tổ của mọi GV, để vẽ các hàng của bảng
     S.roster = qs.docs.map((d) => ({ email: d.id, ...d.data() })).sort((a, b) => (a.order || 0) - (b.order || 0));
     S.render();

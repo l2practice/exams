@@ -461,10 +461,9 @@ export async function endYearFromSettings() {
       if (result.error === "already_closed" && result.reportUrl) window.open(result.reportUrl, "_blank", "noopener");
       throw new Error(result.error || "failed");
     }
-    S.me.prior = 0; S.cfg = { ...S.cfg, namHoc: result.nextYear, khoaHopLe: result.cohorts, khoaNam1: result.cohorts[result.cohorts.length - 1] };
-    $("yearEndMsg").innerHTML = `Đã kết thúc ${esc(result.year)}. ${result.mailSent ? "Báo cáo đã gửi qua email." : "Không gửi được email; bạn vẫn có thể mở báo cáo tại đây."} <a href="${esc(result.reportUrl)}" target="_blank" rel="noopener">Mở Google Sheets</a>`;
+    S.yearClosed = true;   // giữ trang để còn thấy link báo cáo; dữ liệu năm mới cần tải lại
+    $("yearEndMsg").innerHTML = `Đã kết thúc ${esc(result.year)}. ${result.mailSent ? "Báo cáo đã gửi qua email." : "Không gửi được email; hãy mở báo cáo tại đây."} <a href="${esc(result.reportUrl)}" target="_blank" rel="noopener">Mở Google Sheets</a> <button type="button" class="primary" onclick="location.reload()">Tải lại để sang năm ${esc(result.nextYear)}</button>`;
     toast(`Đã chuyển sang năm học ${result.nextYear}.`);
-    S.render();
   } catch (e) {
     $("yearEndErr").textContent = ({ auth: "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.", forbidden: "Chỉ quản trị toàn khoa mới được kết thúc năm học.", already_closed: "Năm học này đã được kết thúc trước đó.", year_changed: "Năm học đã thay đổi. Tải lại trang rồi kiểm tra lại.", "Năm học trong CauHinh phải có dạng 2026-2027.": "Năm học trong cấu hình chưa đúng định dạng YYYY-YYYY." })[e.message] || "Chưa hoàn tất được. Hãy mở tab mới và kiểm tra tab NhatKyDongBo trước khi thử lại.";
   } finally { button.disabled = false; button.textContent = "Xuất thống kê và kết thúc năm học"; }

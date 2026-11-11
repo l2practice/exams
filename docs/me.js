@@ -1,7 +1,7 @@
 // Các trang của giảng viên: Tổng quan · Đăng ký ca thi · Ca của tôi · Lịch sử gác thi.
 import {
   auth, db, S, $, esc, toast, ask, TO_LABEL, TO_SHORT, caInfo, dowOf, dmOf, dmyOf, fmtLong, todayIso, isoOf, khoaNam,
-  statusOf, isRegOpen, slotWho, isOther, STATUS_LABEL, needOf, totalNeed, totalTaken, visibleSlots, findSlot,
+  statusOf, isRegOpen, roleLabel, slotWho, isOther, STATUS_LABEL, needOf, totalNeed, totalTaken, visibleSlots, findSlot,
 } from "./core.js";
 import { icon } from "./icons.js";
 import { scriptUrl } from "./firebase-config.js";
@@ -56,7 +56,7 @@ export function overviewHtml() {
   }).join("");
   const kpi = (cls, ic, v, l) => `<div class="kpi"><span class="kicon ${cls}">${icon(ic)}</span><div><div class="kv">${v}</div><div class="kl">${l}</div></div></div>`;
   return `<div class="greet"><h2>Xin chào, <b>${esc(S.me.name || S.me.email)}</b> 👋</h2>
-      <p>${S.me.leadTo ? `Tổ trưởng – Tổ ${esc(TO_LABEL[S.me.leadTo])}` : `Giảng viên – Tổ ${esc(TO_LABEL[S.me.to] || "")}`}</p></div>
+      <p>${esc(roleLabel())}</p></div>
     <div class="kpis4">${kpi("violet", "calendar", min, "Tổng số ca (định mức)")}${kpi("green", "checkCircle", done, "Đã gác")}${kpi("blue", "calendarCheck", upcoming.length, "Sắp tới")}${kpi("orange", "hourglass", short, "Còn thiếu")}</div>
     <div class="dash">
       <div class="card ringcard">
