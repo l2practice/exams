@@ -155,7 +155,7 @@ export function registerHtml() {
     return `<div class="card center"><b>Hiện chưa có đợt thi nào mở đăng ký.</b><p class="muted" style="margin:8px 0 0">${draft ? `Có ${draft} đợt đang được tổ trưởng soạn lịch, sẽ hiện ở đây khi mở đăng ký.` : "Chưa có đợt mới nào được tạo."} Thời điểm mở đợt tiếp theo do tổ trưởng quyết định; vui lòng hỏi tổ trưởng hoặc quay lại sau.</p></div>`;
   }
   const all = dots.flatMap((d) => visibleSlots(d.id));
-  const khoas = [...new Set(all.filter((s) => !isOther(s)).map((s) => s.khoa))].sort((a, b) => a - b);
+  const khoas = [...new Set(all.map((s) => s.khoa))].sort((a, b) => a - b);
   const nganhLabel = new Map(all.map((s) => [s.nganh, isOther(s) ? `Khoa khác: ${s.donVi}` : s.nganh]));
   const nganhs = [...nganhLabel.keys()].sort();
   const cnts = allCounts(), mine = myIds();
@@ -196,7 +196,7 @@ function listRows(items, cnts, mine) {
         : why === "Đã đủ" ? `<span class="pill ok">Đã đủ người</span>` : `<span class="pill">${esc(why)}</span>`;
       return `<div class="rrow ${s.id === S.pick ? "picked" : ""}" data-pick="${esc(s.id)}">
         <div class="c-date rr-date">${esc(dayLabel(s.date))}</div>
-        <div class="c-ca">Ca ${s.ca} · ${ci.start}</div><div class="c-k">${isOther(s) ? "Khoa khác" : "K" + esc(s.khoa)}</div><div class="c-n">${esc(isOther(s) ? s.donVi : s.nganh)}</div>
+        <div class="c-ca">Ca ${s.ca} · ${ci.start}</div><div class="c-k">K${esc(s.khoa)}</div><div class="c-n">${esc(isOther(s) ? s.donVi : s.nganh)}</div>
         <div class="c-sum small">Ca ${s.ca} · ${ci.start} · ${esc(slotWho(s))} · đã ĐK ${st.taken}/${st.need}</div>
         <div class="c-meta">${esc(s.mon || "—")}${multi ? ` <span class="crowmeta">· ${esc(dotName(s.dotId))}</span>` : ""}${st.k !== "mine" && sameDay(s) ? ` <span class="pill warn">⚠ Cùng ngày</span>` : ""}</div>
         <div class="c-cnt">${st.need ? `${st.taken} / ${st.need}` : "—"}</div>
@@ -251,7 +251,7 @@ function timelineCard(p, mine) {
 function dayCard(all, p, cnts, mine) {
   const day = all.filter((s) => s.date === p.date).sort(slotKey);
   const cell = (s, t) => { const n = needOf(s, t); if (!n) return `<span class="cellx na">–</span>`; const c = cnts[s.dotId]?.[s.id]?.["t" + t] || 0; return `<span class="cellx ${c >= n ? "full" : c > 0 ? "part" : "zero"}">${c}/${n}</span>`; };
-  const rows = day.map((s) => `<tr class="${s.id === p.id ? "sel" : ""}"><th>Ca ${s.ca}</th><td>${isOther(s) ? "Khoa khác" : "K" + esc(s.khoa)}</td><td>${esc(isOther(s) ? s.donVi : s.nganh)}</td><td>${cell(s, 1)}</td><td>${cell(s, 2)}</td><td>${cell(s, 3)}</td></tr>`).join("");
+  const rows = day.map((s) => `<tr class="${s.id === p.id ? "sel" : ""}"><th>Ca ${s.ca}</th><td>K${esc(s.khoa)}</td><td>${esc(isOther(s) ? s.donVi : s.nganh)}</td><td>${cell(s, 1)}</td><td>${cell(s, 2)}</td><td>${cell(s, 3)}</td></tr>`).join("");
   const mineToday = S.myYear.filter((r) => r.date === p.date).sort((a, b) => a.ca - b.ca);
   const names = (S.regsBy[p.dotId] || []).filter((r) => r.slotId === p.id);
   const why = mine.has(p.id) ? null : reason(p, cnts);
@@ -307,7 +307,7 @@ function gridFor(d, mine, pass) {
   for (const s of slots) { const last = days.at(-1); if (last && last.date === s.date) last.n++; else days.push({ date: s.date, n: 1 }); }
   const rowDate = days.map((g) => `<th colspan="${g.n}" class="date"><b>${esc(dowOf(g.date))}</b><br>${dmOf(g.date)}</th>`).join("");
   const rowCa = slots.map((s) => `<th>Ca ${s.ca}<br><small>${caInfo(s.ca).start}</small></th>`).join("");
-  const rowKn = slots.map((s) => `<th title="${esc(s.mon || "")}">${isOther(s) ? "Khoa khác" : "K" + esc(s.khoa)}<br><small>${esc(isOther(s) ? s.donVi : s.nganh)}</small></th>`).join("");
+  const rowKn = slots.map((s) => `<th title="${esc(s.mon || "")}">K${esc(s.khoa)}<br><small>${esc(isOther(s) ? s.donVi : s.nganh)}</small></th>`).join("");
   const rowLeft = slots.map((s) => { const need = totalNeed(s), taken = totalTaken(regs, s.id), left = need - taken; return `<th class="${!need ? "na" : left > 0 ? "okc" : "bad"}">${!need ? "–" : `${taken}/${need}`}</th>`; }).join("");
   const meRow = S.roster.find((r) => r.email === S.me.email) || { name: S.me.name, to: S.me.to };
   const myCells = slots.map((s) => {

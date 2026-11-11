@@ -29,7 +29,7 @@ function detailHtml(p, cols) {
   const today = todayIso();
   const rows = p.list.map((r) => {
     const s = findSlot(r.slotId), ci = caInfo(r.ca);
-    return `<tr><td>${esc(fmtLong(r.date))}</td><td>Ca ${r.ca} · ${ci.start} <span class="small">(có mặt ${ci.arrive})</span></td><td>${s ? (isOther(s) ? "Khoa khác" : "K" + esc(s.khoa)) : "—"}</td><td>${s ? esc(isOther(s) ? s.donVi : s.nganh) : "—"}</td>
+    return `<tr><td>${esc(fmtLong(r.date))}</td><td>Ca ${r.ca} · ${ci.start} <span class="small">(có mặt ${ci.arrive})</span></td><td>${s ? "K" + esc(s.khoa) : "—"}</td><td>${s ? esc(isOther(s) ? s.donVi : s.nganh) : "—"}</td>
       <td>${esc(s?.mon || "")}</td><td>${esc(dotName(r.dotId))}</td><td><span class="pill ${r.date < today ? "ok" : "warn"}">${r.date < today ? "Đã gác" : "Sắp tới"}</span></td></tr>`;
   }).join("");
   return `<tr class="gv-detail"><td colspan="${cols}"><div class="detail">
@@ -139,7 +139,7 @@ export function addHtml() {
       <label>Ngành</label>
       <div class="row">${NGANH.map((n) => `<label class="check"><input type="checkbox" name="addNganh" value="${n}"> ${n}</label>`).join("")}<button type="button" class="chip-add" id="btnAddOther">+ Add others</button></div>
       <div id="otherBox" hidden>
-        <label for="addDonVi">Tên khoa khác <span class="small">(chỉ dùng khi đi gác cho khoa khác; ca này không gắn với Khoá/Ngành của khoa mình)</span></label>
+        <label for="addDonVi">Tên khoa khác <span class="small">(chỉ dùng khi đi gác cho khoa khác: chọn Khoá ở trên, còn Ngành thì bỏ qua)</span></label>
         <input class="field" id="addDonVi" type="text" maxlength="60" placeholder="Ví dụ: Khoa Kinh tế">
       </div>
       </div>
@@ -228,8 +228,8 @@ function plan(f) {
   if (pastDays.length) throw new Error("Không thêm được ca vào ngày đã qua: " + pastDays.slice(0, 3).map((d) => fmtLong(d)).join("; ") + ". Hãy chọn ngày từ hôm nay trở đi.");
   const combos = [];
   if (f.donVi) {
-    if (!days.length || !f.cas.length) throw new Error("Chọn ít nhất 1 ngày và 1 ca.");
-    for (const date of days) for (const ca of f.cas) combos.push({ date, ca, khoa: 0, nganh: otherCode(f.donVi), donVi: f.donVi, mon: f.mon });
+    if (!days.length || !f.cas.length || !f.khoas.length) throw new Error("Chọn ít nhất 1 ngày, 1 ca và 1 khoá (khoá của sinh viên khoa đó thi).");
+    for (const date of days) for (const ca of f.cas) for (const khoa of f.khoas) combos.push({ date, ca, khoa, nganh: otherCode(f.donVi), donVi: f.donVi, mon: f.mon });
     return planCombos(f.dotId, combos, f.need);
   }
   if (!days.length || !f.cas.length || !f.khoas.length || !f.nganhs.length) throw new Error("Chọn ít nhất 1 ngày, 1 ca, 1 khoá, 1 ngành.");

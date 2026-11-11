@@ -171,7 +171,7 @@ function dateLongVN(iso) {
   const [y, m, d] = iso.split('-').map(Number);
   return `${DOW_SHORT[new Date(y, m - 1, d).getDay()]} ngày ${d}/${m}/${y}`;
 }
-const slotWho = (s) => (String(s.nganh || '').indexOf('KHAC') === 0 ? 'Khoa khác · ' + (s.donVi || '') : 'K' + s.khoa + ' · ' + s.nganh);
+const slotWho = (s) => (String(s.nganh || '').indexOf('KHAC') === 0 ? 'K' + s.khoa + ' · Khoa khác: ' + (s.donVi || '') : 'K' + s.khoa + ' · ' + s.nganh);
 const slotId = (ma, iso, ca, khoa, nganh) => `${ma}-${iso.replace(/-/g, '')}-c${ca}-k${khoa}-${nganh}`;
 const startDate = (cfg, iso, ca) => new Date(`${iso}T${cfg.ca[ca].start}:00+07:00`);
 const arriveDate = (cfg, iso, ca) => new Date(`${iso}T${cfg.ca[ca].arrive}:00+07:00`);
@@ -474,7 +474,7 @@ function endAcademicYear(req) {
     detail.getRange(1, 1, 1, 10).setValues([['Ngày', 'Ca', 'Khóa', 'Ngành', 'Môn thi', 'Đợt thi', 'Email', 'Họ tên', 'Tổ chỉ tiêu', 'Năm học']]).setFontWeight('bold');
     const detailRows = regs.map((r) => {
       const s = slots.get(r.slotId) || {}, d = dots.get(r.dotId) || {};
-      return [r.date || '', r.ca || '', (String(s.nganh || '').indexOf('KHAC') === 0 ? 'Khoa khác' : s.khoa) || '', (String(s.nganh || '').indexOf('KHAC') === 0 ? s.donVi : s.nganh) || '', s.mon || '', d.name || r.dotId || '', r.email || '', r.name || '', TO_LABEL[r.to] || r.to || '', year];
+      return [r.date || '', r.ca || '', s.khoa || '', (String(s.nganh || '').indexOf('KHAC') === 0 ? s.donVi : s.nganh) || '', s.mon || '', d.name || r.dotId || '', r.email || '', r.name || '', TO_LABEL[r.to] || r.to || '', year];
     }).sort((a, b) => String(a[0]).localeCompare(String(b[0])) || Number(a[1]) - Number(b[1]));
     if (detailRows.length) detail.getRange(2, 1, detailRows.length, 10).setValues(detailRows);
     detail.setFrozenRows(1); detail.autoResizeColumns(1, 10);

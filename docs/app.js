@@ -48,7 +48,7 @@ const authMsg = (code) => ({
 
 function show(id) {
   for (const x of ["login", "denied", "loading"]) $(x).hidden = x !== id;
-  $("authWrap").hidden = id === "app";
+  $("authWrap").hidden = id === "app";   // "loading" là lớp phủ toàn màn hình, nằm trên màn đăng nhập
   $("app").hidden = id !== "app";
 }
 // biểu tượng cố định
@@ -65,10 +65,11 @@ $("loginForm").onsubmit = async (e) => {
   $("loginErr").textContent = ""; $("loginInfo").textContent = "";
   try {
     store.set(LOGIN_AT, String(Date.now()));
+    $("loading").hidden = false;                       // lớp phủ ngay khi bấm Đăng nhập
     await signInWithEmailAndPassword(auth, email, pw);
     if ($("remember").checked) store.set(EMAIL_KEY, email); else store.del(EMAIL_KEY);
     $("pw").value = "";
-  } catch (err) { store.del(LOGIN_AT); $("loginErr").textContent = authMsg(err.code); }
+  } catch (err) { $("loading").hidden = true; store.del(LOGIN_AT); $("loginErr").textContent = authMsg(err.code); }
 };
 
 /** Quên mật khẩu: Apps Script đặt mật khẩu mới rồi gửi mail từ tài khoản của khoa (không lộ email nào có trong danh sách). */
@@ -208,10 +209,9 @@ onAuthStateChanged(auth, async (u) => {
   if (loginAge() > SESSION_MS) { await expireSession(EXPIRED_MSG); return; }   // phiên cũ (hoặc chưa có mốc đăng nhập) => bắt đăng nhập lại
   show("loading");
   const email = u.email.toLowerCase();
-  const t = await getDoc(doc(db, "teachers", email));
+  const [t, c] = await Promise.all([getDoc(doc(db, "teachers", email)), getDoc(doc(db, "config", "main"))]);   // tải song song cho nhanh
   if (!t.exists()) { $("deniedEmail").textContent = email; return show("denied"); }
   S.me = { email, ...t.data() };
-  const c = await getDoc(doc(db, "config", "main"));
   S.cfg = c.exists() ? c.data() : { minCa: 20 };
 
   S.unsub.push(onSnapshot(doc(db, "config", "main"), (d) => { S.cfg = d.data() || S.cfg; S.render(); }));

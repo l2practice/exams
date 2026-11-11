@@ -45,11 +45,11 @@ export const STATUS_LABEL = { SOAN: "Đang soạn lịch", MO: "Đang mở đăn
 export const needOf = (s, t) => s.need?.["t" + t] || 0;
 export const totalNeed = (s) => needOf(s, 1) + needOf(s, 2) + needOf(s, 3);
 export const totalTaken = (regs, slotId) => (regs || []).filter((r) => r.slotId === slotId).length;
-// Ca thi của khoa khác: khoa=0, nganh="KHAC<SLUG>" (để mã ca khác nhau giữa các khoa), donVi = tên khoa hiển thị
+// Ca thi của khoa khác: vẫn có khoá (trùng khoá của khoa mình), nganh="KHAC<SLUG>" (để mã ca khác nhau giữa các khoa), donVi = tên khoa hiển thị
 export const isOther = (s) => !!s && String(s.nganh || "").startsWith("KHAC");
 export const otherCode = (name) => "KHAC" + String(name).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
 /** "K12 · SPA" hoặc "Khoa khác · Tên khoa" */
-export const slotWho = (s) => (!s ? "" : isOther(s) ? `Khoa khác · ${s.donVi || "—"}` : `K${s.khoa} · ${s.nganh}`);
+export const slotWho = (s) => (!s ? "" : isOther(s) ? `K${s.khoa} · Khoa khác: ${s.donVi || "—"}` : `K${s.khoa} · ${s.nganh}`);
 export const slotId = (dot, iso, ca, khoa, nganh) => `${dot}-${iso.replace(/-/g, "")}-c${ca}-k${khoa}-${nganh}`;
 export const visibleSlots = (dotId) => (S.slotsBy[dotId] || []).filter((s) => totalNeed(s) > 0);
 export const findSlot = (id) => Object.values(S.slotsBy).flat().find((s) => s.id === id);
