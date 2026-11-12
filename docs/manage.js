@@ -512,8 +512,8 @@ async function delRow(id) {
 /** Gọi từ app.js cho mọi cú bấm trong trang; trả true nếu là thao tác của tổ trưởng. */
 export function manageClick(e) {
   if (e.target.closest("#btnAiKeySave")) {
-    const k = $("aiKeyIn").value.trim();
-    if (!/^[\w-]{20,200}$/.test(k)) { $("scanErr").textContent = "Khoá không hợp lệ. Hãy dán đúng khoá API (thường bắt đầu bằng AIza)."; return true; }
+    const k = $("aiKeyIn").value.replace(/\s+/g, "");   // khoá đúng hay sai do Gemini xác nhận lúc quét
+    if (k.length < 20 || k.length > 300) { $("scanErr").textContent = "Khoá quá ngắn hoặc quá dài. Hãy sao chép lại toàn bộ khoá từ AI Studio."; return true; }
     try { localStorage.setItem(AI_KEY, k); } catch { $("scanErr").textContent = "Trình duyệt không cho lưu khoá (chế độ ẩn danh?)."; return true; }
     $("aiKeyIn").value = ""; $("scanErr").textContent = ""; showAiKey(true); toast("Đã lưu khoá trên máy này."); return true;
   }

@@ -1023,7 +1023,7 @@ function scanSchedule(req) {
   const t = readTeachers().find((x) => x.email === email);
   if (!t || !(t.admin || t.leadTo)) return { ok: false, error: 'forbidden' };
   const own = String(req.geminiKey || '').trim();                              // khoá riêng của tổ trưởng (lưu trên máy họ), chỉ dùng cho lần gọi này, không lưu
-  if (own.length > 200) return { ok: false, error: 'bad_key' };
+  if (own.length > 300) return { ok: false, error: 'bad_key' };
   const key = own || PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if (!key) return { ok: false, error: 'no_key' };
   const b64 = String(req.image || '');
