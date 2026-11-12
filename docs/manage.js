@@ -198,6 +198,8 @@ function planCombos(dotId, combos, need) {
   if (tos.every((t) => !(need[t] > 0))) throw new Error("Nhập số giảng viên cần (từ 1 trở lên) cho tổ của bạn.");
   const dot = S.dots.find((d) => d.id === dotId);
   if (!dot || !canEditCa(dot)) throw new Error("Đợt này không còn cho thêm ca.");
+  const pastDays = [...new Set(combos.map((c) => c.date).filter((d) => d < todayIso()))];   // chung cho nhập tay và quét AI
+  if (pastDays.length) throw new Error("Không thêm được ca vào ngày đã qua: " + pastDays.slice(0, 3).map((d) => fmtLong(d)).join("; ") + ". Hãy chọn ngày từ hôm nay trở đi.");
   const have = new Map((S.slotsBy[dotId] || []).map((s) => [s.id, s]));
   const creates = [], updates = [], seen = new Set();
   let same = 0, blocked = 0;
@@ -230,10 +232,9 @@ function plan(f) {
   const { dates, bad } = parseDates(f.dates);
   if (bad.length) throw new Error("Không hiểu ngày: " + bad.join(", ") + ". Dạng đúng: 27/07/2026 hoặc 27/07/2026-31/07/2026.");
   const days = dates.filter((d) => !(f.skipSun && d.getDay() === 0)).map(isoOf);
-  const pastDays = days.filter((d) => d < todayIso());
-  if (pastDays.length) throw new Error("Không thêm được ca vào ngày đã qua: " + pastDays.slice(0, 3).map((d) => fmtLong(d)).join("; ") + ". Hãy chọn ngày từ hôm nay trở đi.");
   const combos = [];
   if (f.donVi) {
+    if (!otherCode(f.donVi)) throw new Error("Tên khoa cần có chữ cái hoặc chữ số.");
     if (!days.length || !f.cas.length || !f.khoas.length) throw new Error("Chọn ít nhất 1 ngày, 1 ca và 1 khoá (khoá của sinh viên khoa đó thi).");
     for (const date of days) for (const ca of f.cas) for (const khoa of f.khoas) combos.push({ date, ca, khoa, nganh: otherCode(f.donVi), donVi: f.donVi, mon: f.mon });
     return planCombos(f.dotId, combos, f.need);

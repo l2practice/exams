@@ -48,7 +48,12 @@ export const totalTaken = (regs, slotId) => (regs || []).filter((r) => r.slotId 
 // Ca thi của khoa khác: vẫn có khoá (trùng khoá của khoa mình), nganh="KHAC<SLUG>" (để mã ca khác nhau giữa các khoa), donVi = tên khoa hiển thị
 export const roleLabel = () => (S.me.admin ? "Quản trị toàn khoa" : S.me.leadTo ? `Tổ trưởng – Tổ ${TO_LABEL[S.me.leadTo]}` : `Giảng viên – Tổ ${TO_LABEL[S.me.to] || ""}`);
 export const isOther = (s) => !!s && String(s.nganh || "").startsWith("KHAC");
-export const otherCode = (name) => "KHAC" + String(name).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+// 6 chữ đầu + 6 ký tự băm của cả tên: "Khoa Công nghệ thông tin" và "Khoa Công nghệ sinh học" không trùng mã (luật Firestore giới hạn 12 ký tự)
+export const otherCode = (name) => {
+  const slug = String(name).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  let h = 2166136261; for (const ch of slug) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return slug ? "KHAC" + slug.slice(0, 6) + h.toString(36).toUpperCase().padStart(6, "0").slice(-6) : "";
+};
 /** "K12 · SPA" hoặc "K14 · Khoa Kinh tế" */
 export const slotWho = (s) => (!s ? "" : isOther(s) ? `K${s.khoa} · ${s.donVi || "—"}` : `K${s.khoa} · ${s.nganh}`);
 export const slotId = (dot, iso, ca, khoa, nganh) => `${dot}-${iso.replace(/-/g, "")}-c${ca}-k${khoa}-${nganh}`;
