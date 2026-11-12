@@ -400,6 +400,8 @@ function doPost(e) {
     if (req.action === 'shift') return out(changeShift(req));
     if (req.action === 'createDot') return out(createDot(req));
     if (req.action === 'endYear') return out(endAcademicYear(req));
+    if (req.action === 'dotStatus') return out(setDotStatus(req));
+    if (req.action === 'importTable') return out(importTable(req));
     return out({ ok: false, error: 'unknown action' });
   } catch (err) { return out({ ok: false, error: String(err.message || 'bad request') }); }
 }
@@ -426,6 +428,24 @@ function createDot(req) {
     const deadline = new Date(Date.now() + 365 * 86400000);
     fsCommit([{ path: 'dots/' + ma, data: { name, hocKy: name.toUpperCase(), status: 'SOAN', open: false, deadline, namHoc: cfg.namHoc, order } }]);
     return { ok: true, id: ma, name, namHoc: cfg.namHoc };
+  } finally { lock.releaseLock(); }
+}
+
+/** Tổ trưởng mở / đóng đăng ký của một đợt từ web; ghi cả tab Dot để lần đồng bộ sau không ghi đè ngược lại. */
+function setDotStatus(req) {
+  const cfg = getCfg(), email = verifyIdToken(req.idToken, cfg);
+  if (!email) return { ok: false, error: 'auth' };
+  if (!readTeachers().some((t) => t.email === email && (t.admin || t.leadTo > 0))) return { ok: false, error: 'forbidden' };
+  const ma = String(req.dotId || ''), status = String(req.status || '');
+  if (!['MO', 'DONG'].includes(status)) return { ok: false, error: 'status' };
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const dots = readDots(), i = dots.findIndex((d) => d.ma === ma);
+    if (i < 0) return { ok: false, error: 'dot' };
+    if (status === 'MO' && dots[i].hanChot && dots[i].hanChot.getTime() <= Date.now()) return { ok: false, error: 'deadline' };
+    SpreadsheetApp.getActive().getSheetByName(SH.DOT).getRange(dots[i].order + 1, 4).setValue(status);
+    fsCommit([{ path: 'dots/' + ma, data: { status, open: status === 'MO' } }]);
+    return { ok: true, status };
   } finally { lock.releaseLock(); }
 }
 
@@ -1014,6 +1034,43 @@ function normalizeScanRows(rows, cfg) {
     return { date: okDate ? date : '', time: String(r.time || '').trim(), ca: timeToCa(r.time, cfg),
       khoa: khoaOK.includes(khoa) ? khoa : null, nganh: NGANH.includes(ng) ? ng : '', mon: String(r.mon || '').trim(), note: String(r.note || '').trim() };
   });
+}
+
+/** Bảng lịch thi (mảng 2 chiều từ Excel / Google Sheet) -> các dòng như kết quả quét AI. Hàm thuần. Trả null nếu không thấy dòng tiêu đề có cột "Ngày". */
+function tableToRows(table, cfg) {
+  const norm = (v) => String(v == null ? '' : v).normalize('NFC').trim();
+  const hi = table.findIndex((r) => (r || []).some((c) => /ngày/i.test(norm(c))));
+  if (hi < 0) return null;
+  const col = (re) => table[hi].findIndex((c) => re.test(norm(c)));
+  const cDate = col(/ngày/i), cCa = col(/^ca$|ca thi|giờ|thời gian/i), cKhoa = col(/kho[áa]|khóa|lớp/i), cNganh = col(/ngành|lớp/i), cMon = col(/môn|học phần/i);
+  let lastDate = '';
+  const raw = table.slice(hi + 1).map((r) => {
+    const g = (i) => (i < 0 ? '' : norm(r[i]));
+    const caTxt = g(cCa), cm = caTxt.match(/^(?:ca\s*)?([1-4])$/i), mon = g(cMon);
+    let date = (g(cDate).match(/\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}|\d{4}-\d{2}-\d{2}/) || [''])[0];
+    if (date) lastDate = date; else if (caTxt || mon) date = lastDate;      // ô ngày gộp nhiều dòng: chỉ dòng đầu có giá trị
+    const ngSrc = g(cNganh) || r.map(norm).join(' ');
+    return { date, time: (caTxt.match(/\d{1,2}[:hH.]\d{2}/) || [''])[0], ca: cm ? Number(cm[1]) : null, khoa: (g(cKhoa).match(/\d{2}/) || [''])[0],
+      nganh: /SPA|sư phạm/i.test(ngSrc) ? 'SPA' : /NNA|ngôn ngữ/i.test(ngSrc) ? 'NNA' : '', mon };
+  }).filter((r) => r.date).slice(0, 300);
+  return normalizeScanRows(raw, cfg).map((n, i) => (raw[i].ca ? Object.assign(n, { ca: raw[i].ca, time: 'Ca ' + raw[i].ca }) : n));
+}
+
+/** Nhập lịch thi từ file Excel (trình duyệt đọc rồi gửi bảng lên) hoặc link Google Sheet (Apps Script mở bằng tài khoản chủ script). Không tự lưu gì. */
+function importTable(req) {
+  const cfg = getCfg(), email = verifyIdToken(req.idToken, cfg);
+  if (!email) return { ok: false, error: 'auth' };
+  if (!readTeachers().some((t) => t.email === email && (t.admin || t.leadTo > 0))) return { ok: false, error: 'forbidden' };
+  let table = req.table;
+  if (req.url) {
+    try {
+      const url = String(req.url), ss = SpreadsheetApp.openByUrl(url), gid = (url.match(/[#&?]gid=(\d+)/) || [])[1];
+      table = ((gid && ss.getSheets().find((s) => String(s.getSheetId()) === gid)) || ss.getSheets()[0]).getDataRange().getDisplayValues();
+    } catch (e) { return { ok: false, error: 'sheet_access', owner: Session.getEffectiveUser().getEmail() }; }
+  }
+  if (!Array.isArray(table) || table.length > 2000) return { ok: false, error: 'bad_table' };
+  const rows = tableToRows(table, cfg);
+  return rows ? { ok: true, rows } : { ok: false, error: 'no_header' };
 }
 
 function scanSchedule(req) {

@@ -124,7 +124,7 @@ export function addHtml() {
       <p class="small">Mỗi ca cần ít nhất 1 giảng viên.</p>
     </div>
 
-    <div class="seg" style="margin-bottom:14px"><button class="on" data-at="manual">Nhập tay</button><button data-at="scan"><span style="display:inline-grid;width:16px">${icon("sparkle")}</span> Quét AI</button></div>
+    <div class="seg" style="margin-bottom:14px"><button class="on" data-at="manual">Nhập tay</button><button data-at="scan"><span style="display:inline-grid;width:16px">${icon("sparkle")}</span> Quét AI</button><button data-at="file">Từ file Excel / Google Sheet</button></div>
 
     <div class="card" id="secManual">
       <h2>Nhập tay</h2>
@@ -166,6 +166,18 @@ export function addHtml() {
       </div>
       <input type="file" id="scanCam" accept="image/*" capture="environment" hidden>
       <input type="file" id="scanFile" accept="image/*" hidden>
+    </div>
+
+    <div class="card" id="secFile" hidden>
+      <h2>Nhập lịch thi từ file</h2>
+      <p class="small">Bảng cần có một dòng tiêu đề với cột <b>Ngày</b>, và nên có <b>Ca</b> hoặc <b>Giờ</b>, <b>Khoá</b> hoặc <b>Lớp</b>, <b>Ngành</b>, <b>Môn</b>. Ứng dụng điền sẵn; <b>bạn kiểm tra và sửa</b> ô đỏ trước khi thêm.</p>
+      <label class="filebtn" for="impFile">${icon("image")} Chọn file Excel (.xlsx, .xls, .csv)</label>
+      <input type="file" id="impFile" accept=".xlsx,.xls,.csv" hidden>
+      <label for="impUrl">Hoặc dán link Google Sheet <span class="small">(chia sẻ "Bất kỳ ai có đường liên kết" đều xem được)</span></label>
+      <div class="create-dot-row"><input class="field" id="impUrl" type="url" placeholder="https://docs.google.com/spreadsheets/d/…"><button type="button" class="primary" id="btnImpUrl">Đọc</button></div>
+    </div>
+
+    <div id="scanOut" hidden>
       <div class="err" id="scanErr" role="alert"></div>
       <div class="okmsg" id="scanMsg" role="status"></div>
       <div id="scanPreview"></div>
@@ -178,7 +190,7 @@ export function slotsHtml() {
   const dots = [...S.dots].sort((a, b) => (b.order || 0) - (a.order || 0));
   if (!dots.length) return `<div class="card center muted">Chưa có đợt thi nào.</div>`;
   return `<div id="slotsPage"><div class="toolbar"><label for="slotDot" style="margin:0">Đợt thi</label>
-    <select class="sel" id="slotDot">${dots.map((d) => `<option value="${esc(d.id)}">${esc(d.name)} (${esc(STATUS_LABEL[statusOf(d)])})</option>`).join("")}</select></div>
+    <select class="sel" id="slotDot">${dots.map((d) => `<option value="${esc(d.id)}">${esc(d.name)} (${esc(STATUS_LABEL[statusOf(d)])})</option>`).join("")}</select><span id="dotAct"></span></div>
     <div id="addList"></div></div>`;
 }
 
@@ -339,6 +351,53 @@ async function runScan(file) {
   }
 }
 
+async function post(action, payload) {
+  if (!scriptUrl) throw new Error("no_url");
+  const res = await fetch(scriptUrl, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ action, idToken: await auth.currentUser.getIdToken(), ...payload }) });
+  return res.json();
+}
+
+/** Nhập từ Excel (đọc trong trình duyệt bằng SheetJS) hoặc link Google Sheet (Apps Script mở); kết quả vào cùng bảng xem trước với quét AI. */
+async function runImport(src) {
+  $("scanErr").textContent = ""; $("scanMsg").textContent = "Đang đọc bảng…"; $("scanPreview").innerHTML = ""; scanRows = [];
+  try {
+    let payload = { url: src };
+    if (src instanceof File) {
+      const XLSX = await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs");
+      // CSV: tự giải mã UTF-8 và giữ nguyên chữ (raw), nếu không tiếng Việt vỡ và 05/12 bị hiểu thành ngày 12 tháng 5
+      const wb = /\.csv$/i.test(src.name) ? XLSX.read(await src.text(), { type: "string", raw: true }) : XLSX.read(await src.arrayBuffer(), { dateNF: "dd/mm/yyyy" });   // ô ngày kiểu mặc định của Excel (m/d/yy) -> dd/mm/yyyy
+      payload = { table: XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: "" }).slice(0, 2000) };
+    }
+    const j = await post("importTable", payload);
+    if (!j.ok) throw Object.assign(new Error(j.error || "fail"), { owner: j.owner });
+    scanRows = (j.rows || []).map((r) => ({ ...r, ca: r.ca || "", khoa: r.khoa || "", on: true }));
+    scanRows.forEach((r) => (r.on = rowOk(r)));
+    if (!scanRows.length) throw new Error("empty");
+    $("scanMsg").textContent = `Đọc được ${scanRows.length} dòng. Ô màu đỏ là chỗ chưa rõ: hãy sửa, hoặc bỏ tick dòng không cần.`;
+    renderScan();
+  } catch (e) {
+    $("scanMsg").textContent = "";
+    $("scanErr").textContent = ({ auth: SCAN_ERR.auth, forbidden: SCAN_ERR.forbidden, no_url: SCAN_ERR.no_url,
+      no_header: 'Không thấy dòng tiêu đề có cột "Ngày". Hãy thêm dòng tiêu đề: Ngày, Ca (hoặc Giờ), Khoá (hoặc Lớp), Ngành, Môn.',
+      empty: "Không có dòng nào có ngày thi trong bảng.", bad_table: "File quá lớn hoặc không đọc được.",
+      sheet_access: `Không mở được Google Sheet. Hãy chia sẻ file cho "Bất kỳ ai có đường liên kết"${e.owner ? ` hoặc cho ${e.owner}` : ""} rồi thử lại.` })[e.message]
+      || "Không đọc được file. Kiểm tra mạng và định dạng file rồi thử lại.";
+  }
+}
+
+async function setDotStatus(dotId, status) {
+  const d = S.dots.find((x) => x.id === dotId); if (!d) return;
+  const open = status === "MO";
+  if (!(await ask({ title: open ? "Mở đăng ký đợt này?" : "Đóng đăng ký đợt này?", rows: [["Đợt thi", d.name]], danger: !open, ok: open ? "Mở đăng ký" : "Đóng đăng ký", cancel: "Quay lại",
+    text: open ? "Giảng viên sẽ thấy các ca của đợt và đăng ký được ngay." : "Giảng viên sẽ không đăng ký thêm được. Các ca đã đăng ký vẫn giữ nguyên." }))) return;
+  try {
+    const j = await post("dotStatus", { dotId, status });
+    if (!j.ok) throw new Error(j.error);
+    toast(open ? "Đã mở đăng ký." : "Đã đóng đăng ký.");
+  } catch (e) { toast(({ deadline: "Hạn chót của đợt (tab Dot) đã qua. Sửa hạn chót rồi mở lại.", forbidden: "Chỉ quản lý được mở / đóng đợt.", auth: "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại." })[e.message] || "Chưa đổi được trạng thái đợt. Thử lại."); }
+}
+
 function renderScan() {
   const sel = (i, f, opts, cur) => `<select data-scan="${i}" data-f="${f}"><option value="">?</option>${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
   const rows = scanRows.map((r, i) => {
@@ -352,7 +411,7 @@ function renderScan() {
       <td><input type="text" data-scan="${i}" data-f="mon" value="${esc(r.mon)}" placeholder="Môn thi"></td>
       <td class="small">${esc(r.time || "")}</td></tr>`;
   }).join("");
-  $("scanPreview").innerHTML = `<div class="tbl-wrap"><table class="list scan"><thead><tr><th></th><th>Ngày</th><th>Ca</th><th>Khoá</th><th>Ngành</th><th>Môn</th><th>Giờ AI đọc</th></tr></thead><tbody>${rows}</tbody></table></div>
+  $("scanPreview").innerHTML = `<div class="tbl-wrap"><table class="list scan"><thead><tr><th></th><th>Ngày</th><th>Ca</th><th>Khoá</th><th>Ngành</th><th>Môn</th><th>Giờ / ca gốc</th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="okmsg" id="scanSum"></div>
     <div class="two"><button type="button" id="btnScanClear">Bỏ kết quả</button><button type="button" class="primary" id="btnScanAdd">Thêm</button></div>`;
   updateScanSummary();
@@ -397,6 +456,7 @@ export function manageChange(e) {
   const t = e.target;
   if (t.id === "slotDot") { refreshAddList(); return true; }
   if (t.dataset && t.dataset.sel === "gvf") { S.gvFilter = t.value; S.render(); return true; }
+  if (t.id === "impFile") { const f = t.files && t.files[0]; t.value = ""; if (f) runImport(f); return true; }
   if (t.id === "scanCam" || t.id === "scanFile") { const f = t.files && t.files[0]; t.value = ""; if (f) runScan(f); return true; }
   if (t.dataset && t.dataset.scan !== undefined) { editScan(t); return true; }
   return false;
@@ -405,6 +465,9 @@ export function manageChange(e) {
 /** Danh sách ca của tổ mình trong đợt đang chọn: sửa số lượng hoặc xoá. Không vẽ lại khi người dùng đang gõ trong bảng. */
 export function refreshAddList() {
   const box = $("addList"); if (!box) return;
+  const cur = S.dots.find((d) => d.id === $("slotDot")?.value);
+  for (const o of $("slotDot").options) { const d = S.dots.find((x) => x.id === o.value); if (d) o.textContent = `${d.name} (${STATUS_LABEL[statusOf(d)]})`; }   // trạng thái đổi realtime
+  $("dotAct").innerHTML = !cur ? "" : statusOf(cur) === "MO" ? `<button class="danger" data-dotst="DONG">Đóng đăng ký</button>` : `<button class="primary" data-dotst="MO">Mở đăng ký cho giảng viên</button>`;
   if (document.activeElement && box.contains(document.activeElement)) return;
   const dotId = $("slotDot")?.value, tos = manageTos();
   const slots = (S.slotsBy[dotId] || []).filter((s) => tos.some((t) => needOf(s, t) > 0))
@@ -519,11 +582,13 @@ export function manageClick(e) {
     $("aiKeyIn").value = ""; $("scanErr").textContent = ""; showAiKey(true); toast("Đã lưu khoá trên máy này."); return true;
   }
   if (e.target.closest("#btnAiKeyDel")) { try { localStorage.removeItem(AI_KEY); } catch { /* bỏ qua */ } showAiKey(false); return true; }
+  if (e.target.closest("#btnImpUrl")) { const u = $("impUrl").value.trim(); if (/^https:\/\/docs\.google\.com\/spreadsheets\//.test(u)) runImport(u); else $("scanErr").textContent = "Dán link Google Sheet (bắt đầu bằng https://docs.google.com/spreadsheets/)."; return true; }
+  if (e.target.closest("[data-dotst]")) { setDotStatus($("slotDot").value, e.target.closest("[data-dotst]").dataset.dotst); return true; }
   if (e.target.closest("#btnAddOther")) { const b = $("otherBox"); b.hidden = !b.hidden; if (!b.hidden) $("addDonVi").focus(); else $("addDonVi").value = ""; return true; }
   let el;
   if ((el = e.target.closest("[data-at]"))) {                      // chuyển tab Nhập tay / Quét AI (không vẽ lại trang để khỏi mất dữ liệu đang nhập)
-    const scan = el.dataset.at === "scan";
-    $("secManual").hidden = scan; $("secScan").hidden = !scan;
+    const at = el.dataset.at;
+    $("secManual").hidden = at !== "manual"; $("secScan").hidden = at !== "scan"; $("secFile").hidden = at !== "file"; $("scanOut").hidden = at === "manual";
     el.parentNode.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === el));
     return true;
   }
